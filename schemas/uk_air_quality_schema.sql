@@ -24,6 +24,10 @@ create table if not exists connectors (
   stations_bbox_supported boolean default true,
   timeseries_station_filter_supported boolean default true,
   last_polled_at timestamptz,
+  last_run_start timestamptz,
+  last_run_end timestamptz,
+  last_run_status text,
+  last_run_message text,
   created_at timestamptz default now()
 );
 
