@@ -29,24 +29,8 @@ This document summarizes the schema defined in `schemas/uk_air_quality_schema.sq
 - `erg_laqn_station_checkpoints`: per-station checkpoints for ERG LAQN batch polling.
 - `uk_aq_ingest_runs`: per-run ingest summaries captured by the dispatcher (status + counts + last_observed_at).
 
-## Geography mapping tables
-- `la_boundaries`: Local Authority polygons (MultiPolygon, 4326) with `la_code` + `la_version` for assigning stations to LAs.
-- `pcon_boundaries`: Parliamentary Constituency polygons (MultiPolygon, 4326) with `pcon_code` + `pcon_version` for assigning stations to constituencies.
-- `station_pcon_history`: Station-to-constituency snapshot per `pcon_version` for fast historical queries.
-- `station_la_queue`: Throttled queue for LA lookups (pending stations with geometry + missing LA metadata).
-- `station_pcon_queue`: Throttled queue for PCON lookups (pending stations with geometry + missing PCON).
-- Spatial index note: expression GIST indexes on `(geometry::geometry)` for `stations` and `pcon_boundaries` support the `ST_Covers` casts used in queue/history refreshes.
-- Lookup index note: partial index on `stations` where `pcon_code` is null helps periodic checks for missing constituency assignments.
-- `uk_aq_region_names`: Region code/name lookup (e.g., `E12000001` → `North East`) used for hex metadata.
-- `uk_aq_refresh_station_la_codes(target_version)`: updates `stations.la_code` + `stations.la_version` using `la_boundaries`.
-- `uk_aq_refresh_station_la_codes_partition(target_version, partition_mod, partition_idx)`: partitioned station LA refresh (missing/out-of-date only) for large datasets.
-- `uk_aq_refresh_station_pcon_codes(target_version)`: updates missing or out-of-date `stations.pcon_code` + `stations.pcon_version` using `pcon_boundaries`.
-- `uk_aq_refresh_station_pcon_codes_partition(target_version, partition_mod, partition_idx)`: partitioned station PCON refresh (missing/out-of-date only) for large datasets.
-- `uk_aq_refresh_station_pcon_history(target_version)`: populates `station_pcon_history` for a boundary version.
-- `uk_aq_refresh_station_pcon_history_partition(target_version, partition_mod, partition_idx)`: partitioned history refresh for large datasets.
-- `uk_aq_process_station_la_queue(target_version, batch_limit)`: processes a small batch of queued stations with geometry, updating `stations` and `station_la_queue` via spatial coverage checks.
-- `uk_aq_process_station_pcon_queue(target_version, batch_limit)`: processes a small batch of queued stations with geometry (no `last_value` requirement), updating `stations` and `station_pcon_queue` via spatial coverage checks.
-- `uk_aq_stations_with_pcon(target_version)`: returns stations joined to `station_pcon_history` for the requested version.
+## Station geography
+- `stations.la_code`/`la_version` and `stations.pcon_code`/`pcon_version` are populated externally (no boundary lookup tables in Supabase).
 - `uk_aq_fix_station_geometry_swapped()`: fixes stations with swapped lat/lon coordinates.
 
 ## Timeseries and metadata
@@ -74,30 +58,12 @@ This document summarizes the schema defined in `schemas/uk_air_quality_schema.sq
 ## Guideline limits
 - `uk_aq_guidelines`: pollutant guideline limits (WHO/UK/EU, etc.) with `pollutant`, `averaging_period_label`, `averaging_period_interval`, `level_label`, `limit_value`, `uom`, and optional `source`/`notes`/validity dates.
 
-## Views
-- `pcon_latest_pm25` (in `schemas/uk_air_quality_views.sql`): constituency-level PM2.5 summaries keyed by `pcon_code` + `pcon_version` with median/mean, station_count, and last update timestamp.
-
 ## RLS (Row Level Security)
 - RLS enabled on all domain tables (not on system tables like spatial_ref_sys), including `station_metadata` and `station_network_memberships`.
 - Policies (idempotent via DO block):
   - `select`: allowed for roles `authenticated` and `service_role`.
   - `all` (insert/update/delete): allowed for `service_role` only.
 - Adjust policies if you need anon read or user-owned row scoping.
-
-## Sample queries
-
-Top constituencies by station count (history snapshot):
-```sql
-select
-  pcon_code,
-  pcon_name,
-  count(*) as station_count
-from station_pcon_history
-where pcon_version = '2024'
-group by pcon_code, pcon_name
-order by station_count desc
-limit 10;
-```
 
 ## Notes on multi-pollutant support
 - Schema is pollutant-agnostic: add new phenomena, stations, timeseries, and observations for NO2, O3, PM10, etc. No structural changes needed.

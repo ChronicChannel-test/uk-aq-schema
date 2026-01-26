@@ -170,42 +170,6 @@ Table breathelondon_timeseries_checkpoints {
   }
 }
 
-Table la_boundaries {
-  id bigint [pk]
-  la_code text
-  la_name text
-  la_version text
-  geometry geography(MultiPolygon, 4326)
-  created_at timestamptz
-}
-
-Table pcon_boundaries {
-  id bigint [pk]
-  pcon_code text
-  pcon_name text
-  pcon_version text
-  geometry geography(MultiPolygon, 4326)
-  created_at timestamptz
-}
-
-Table station_pcon_history {
-  id bigint [pk]
-  station_id bigint
-  pcon_code text
-  pcon_name text
-  pcon_version text
-  computed_at timestamptz
-}
-
-Table station_pcon_queue {
-  station_id bigint [pk]
-  status text
-  attempts integer
-  last_error text
-  created_at timestamptz
-  updated_at timestamptz
-}
-
 Table pcon_current {
   id bigint [pk]
   gss_code text
@@ -349,8 +313,6 @@ Ref: uk_air_sos_network_pollutants.network_ref > uk_air_sos_networks.network_ref
 Ref: uk_air_sos_station_refs.station_id > stations.id
 Ref: breathelondon_timeseries_checkpoints.station_id > stations.id
 Ref: breathelondon_timeseries_checkpoints.timeseries_id > timeseries.id
-Ref: station_pcon_history.station_id > stations.id
-Ref: station_pcon_queue.station_id > stations.id
 Ref: timeseries.station_id > stations.id
 Ref: timeseries.connector_id > connectors.id
 Ref: timeseries.offering_id > offerings.id
