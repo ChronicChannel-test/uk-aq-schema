@@ -94,6 +94,13 @@ alter default privileges in schema uk_aq_pop
 alter default privileges in schema uk_aq_pop
   grant execute on functions to service_role;
 
+-- View grants (core PM2.5 rollups).
+alter view if exists uk_aq_core.la_latest_pm25 set (security_invoker = true);
+alter view if exists uk_aq_core.pcon_latest_pm25 set (security_invoker = true);
+
+grant select on uk_aq_core.la_latest_pm25 to authenticated, service_role;
+grant select on uk_aq_core.pcon_latest_pm25 to authenticated, service_role;
+
 do $$
 declare
   t text;

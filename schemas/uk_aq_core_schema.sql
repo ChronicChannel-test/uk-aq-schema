@@ -438,3 +438,123 @@ set label = excluded.label,
     lower_value = excluded.lower_value,
     upper_value = excluded.upper_value,
     uom = excluded.uom;
+
+-- Local authority latest PM2.5 (median + mean) derived from station LA codes.
+create or replace view la_latest_pm25 as
+with pm25_candidates as (
+  select
+    ts.station_id,
+    ts.last_value,
+    ts.last_value_at,
+    row_number() over (
+      partition by ts.station_id
+      order by ts.last_value_at desc nulls last
+    ) as rn
+  from timeseries ts
+  join phenomena phen on phen.id = ts.phenomenon_id
+  where ts.station_id is not null
+    and ts.last_value is not null
+    and ts.last_value_at is not null
+    and ts.last_value >= 0
+    and (
+      lower(coalesce(phen.pollutant_label, '')) = 'pm2.5'
+      or lower(coalesce(phen.notation, '')) = 'pm2.5'
+      or lower(coalesce(phen.label, '')) like '%pm2.5%'
+    )
+),
+pm25_latest as (
+  select
+    stn.la_code,
+    stn.la_version,
+    pm.last_value,
+    pm.last_value_at
+  from pm25_candidates pm
+  join stations stn on stn.id = pm.station_id
+  where pm.rn = 1
+    and stn.la_code is not null
+),
+pm25_agg as (
+  select
+    la_code,
+    la_version,
+    count(*)::int as station_count,
+    percentile_cont(0.5) within group (order by last_value) as median_value,
+    avg(last_value) as mean_value,
+    max(last_value_at) as latest_value_at
+  from pm25_latest
+  group by la_code, la_version
+)
+select
+  pm25_agg.la_code,
+  gc.name as la_name,
+  pm25_agg.la_version,
+  pm25_agg.station_count,
+  (pm25_agg.station_count = 1) as single_site,
+  pm25_agg.median_value,
+  pm25_agg.mean_value,
+  pm25_agg.latest_value_at
+from pm25_agg
+left join gss_codes gc
+  on gc.gss_code = pm25_agg.la_code;
+
+-- Parliamentary constituency latest PM2.5 (median + mean) derived from station PCON codes.
+create or replace view pcon_latest_pm25 as
+with pm25_candidates as (
+  select
+    ts.station_id,
+    ts.last_value,
+    ts.last_value_at,
+    row_number() over (
+      partition by ts.station_id
+      order by ts.last_value_at desc nulls last
+    ) as rn
+  from timeseries ts
+  join phenomena phen on phen.id = ts.phenomenon_id
+  where ts.station_id is not null
+    and ts.last_value is not null
+    and ts.last_value_at is not null
+    and ts.last_value >= 0
+    and (
+      lower(coalesce(phen.pollutant_label, '')) = 'pm2.5'
+      or lower(coalesce(phen.notation, '')) = 'pm2.5'
+      or lower(coalesce(phen.label, '')) like '%pm2.5%'
+    )
+),
+pm25_latest as (
+  select
+    stn.pcon_code,
+    stn.pcon_version,
+    pm.last_value,
+    pm.last_value_at
+  from pm25_candidates pm
+  join stations stn on stn.id = pm.station_id
+  where pm.rn = 1
+    and stn.pcon_code is not null
+),
+pm25_agg as (
+  select
+    pcon_code,
+    pcon_version,
+    count(*)::int as station_count,
+    percentile_cont(0.5) within group (order by last_value) as median_value,
+    avg(last_value) as mean_value,
+    max(last_value_at) as latest_value_at
+  from pm25_latest
+  group by pcon_code, pcon_version
+)
+select
+  pm25_agg.pcon_code,
+  coalesce(pc.name, pl.name, gc.name) as pcon_name,
+  pm25_agg.pcon_version,
+  pm25_agg.station_count,
+  (pm25_agg.station_count = 1) as single_site,
+  pm25_agg.median_value,
+  pm25_agg.mean_value,
+  pm25_agg.latest_value_at
+from pm25_agg
+left join pcon_current pc
+  on pc.gss_code = pm25_agg.pcon_code
+left join pcon_legacy pl
+  on pl.gss_code = pm25_agg.pcon_code
+left join gss_codes gc
+  on gc.gss_code = pm25_agg.pcon_code;
