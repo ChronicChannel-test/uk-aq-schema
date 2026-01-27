@@ -439,6 +439,44 @@ set label = excluded.label,
     upper_value = excluded.upper_value,
     uom = excluded.uom;
 
+-- UK-AIR SOS timeseries polling helper
+create or replace function uk_air_sos_select_timeseries_ids(
+  batch_limit integer default 200
+)
+returns bigint[]
+language plpgsql
+set search_path = uk_aq_core, uk_aq_raw, public, pg_catalog
+as $$
+declare
+  v_connector_id bigint;
+  series_ids bigint[];
+begin
+  select id into v_connector_id
+  from connectors
+  where connector_code = 'uk_air_sos'
+  limit 1;
+
+  if v_connector_id is null then
+    return null;
+  end if;
+
+  with candidates as (
+    select ts.id
+    from timeseries ts
+    left join uk_air_sos_timeseries_checkpoints chk on chk.timeseries_id = ts.id
+    where ts.connector_id = v_connector_id
+    order by (chk.last_polled_at is not null),
+      chk.last_polled_at,
+      ts.id
+    limit batch_limit
+  )
+  select array_agg(id) into series_ids
+  from candidates;
+
+  return series_ids;
+end;
+$$;
+
 -- Local authority latest PM2.5 (median + mean) derived from station LA codes.
 create or replace view la_latest_pm25 as
 with pm25_candidates as (
