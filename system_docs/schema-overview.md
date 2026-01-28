@@ -28,6 +28,7 @@ This document summarizes the schema defined in `schemas/uk_air_quality_schema.sq
 - `breathelondon_timeseries_checkpoints`: per-site/species checkpoints for staged Breathe London data pulls.
 - `erg_laqn_station_checkpoints`: per-station checkpoints for ERG LAQN batch polling.
 - `uk_aq_ingest_runs`: per-run ingest summaries captured by the dispatcher (status + counts + last_observed_at).
+- `dispatcher_settings`: dispatcher toggles (parallel ingest + max runs per call).
 
 ## Station geography
 - `stations.la_code`/`la_version` and `stations.pcon_code`/`pcon_version` are populated externally (no boundary lookup tables in Supabase).
@@ -38,7 +39,7 @@ This document summarizes the schema defined in `schemas/uk_air_quality_schema.sq
 - `reference_values`: optional reference lines attached to a timeseries (name, color, value).
 
 ## Observations
-- `observations`: raw time-value pairs for each timeseries (observed_at timestamptz, value, status flag). Primary key is `(timeseries_id, observed_at)`.
+- `observations`: raw time-value pairs for each timeseries (observed_at timestamptz, value, status flag). Partitioned by `connector_id` with primary key `(connector_id, timeseries_id, observed_at)`.
 
 ## History schema (uk_aq_history)
 - Defined in `schemas/uk_aq_history_schema.sql`.

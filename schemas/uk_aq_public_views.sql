@@ -152,6 +152,10 @@ select
   created_at
 from uk_aq_core.uk_aq_ingest_runs;
 
+create or replace view dispatcher_settings as
+select id, dispatcher_parallel_ingest, max_runs_per_dispatch_call, updated_at
+from uk_aq_core.dispatcher_settings;
+
 -- Helper view + thresholds for Bristol AURN rendering
 create or replace view bristol_latest_pollutants as
 with target_service as (
@@ -238,6 +242,7 @@ alter view if exists timeseries set (security_invoker = true);
 alter view if exists reference_values set (security_invoker = true);
 alter view if exists observations set (security_invoker = true);
 alter view if exists uk_aq_ingest_runs set (security_invoker = true);
+alter view if exists dispatcher_settings set (security_invoker = true);
 alter view if exists bristol_latest_pollutants set (security_invoker = true);
 alter view if exists uk_aq_station_lat_lon set (security_invoker = true);
 

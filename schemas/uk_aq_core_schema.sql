@@ -369,13 +369,18 @@ create table if not exists reference_values (
 -- Observations (time-value pairs)
 
 create table if not exists observations (
+  connector_id bigint not null references connectors(id) on delete cascade,
   timeseries_id bigint references timeseries(id) on delete cascade,
   observed_at timestamptz not null,
   value numeric,
   status text,
   created_at timestamptz default now(),
-  primary key (timeseries_id, observed_at)
-);
+  primary key (connector_id, timeseries_id, observed_at)
+) partition by list (connector_id);
+
+create table if not exists observations_default
+  partition of observations default;
+
 create index if not exists observations_time_idx on observations(observed_at);
 
 -- Ingest run summaries
@@ -400,6 +405,20 @@ create table if not exists uk_aq_ingest_runs (
 
 create index if not exists uk_aq_ingest_runs_connector_idx on uk_aq_ingest_runs(connector_code);
 create index if not exists uk_aq_ingest_runs_run_end_idx on uk_aq_ingest_runs(run_ended_at desc);
+
+
+-- Dispatcher settings (dashboard toggles)
+create table if not exists dispatcher_settings (
+  id smallint primary key default 1,
+  dispatcher_parallel_ingest boolean default false,
+  max_runs_per_dispatch_call int default 1,
+  updated_at timestamptz default now(),
+  check (max_runs_per_dispatch_call >= 1)
+);
+
+insert into dispatcher_settings (id, dispatcher_parallel_ingest, max_runs_per_dispatch_call)
+values (1, false, 1)
+on conflict (id) do nothing;
 
 
 -- Pollutant thresholds for DAQI (used by Bristol view)

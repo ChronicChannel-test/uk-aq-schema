@@ -4,7 +4,7 @@ declare
   t text;
 begin
   for t in
-    select unnest(ARRAY['connectors','categories','phenomena','offerings','features','procedures','stations','station_metadata','station_network_memberships','uk_aq_networks','uk_air_sos_networks','uk_air_sos_network_pollutants','uk_aq_guidelines','timeseries','reference_values','observations','uk_aq_ingest_runs','pcon_current','pcon_legacy','gss_codes','uk_aq_region_names','pollutant_thresholds']::text[])
+    select unnest(ARRAY['connectors','categories','phenomena','offerings','features','procedures','stations','station_metadata','station_network_memberships','uk_aq_networks','uk_air_sos_networks','uk_air_sos_network_pollutants','uk_aq_guidelines','timeseries','reference_values','observations','uk_aq_ingest_runs','dispatcher_settings','pcon_current','pcon_legacy','gss_codes','uk_aq_region_names','pollutant_thresholds']::text[])
   loop
     execute format('alter table uk_aq_core.%I enable row level security', t);
     if not exists (
