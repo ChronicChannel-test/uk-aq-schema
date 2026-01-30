@@ -338,7 +338,7 @@ begin
   candidates as (
     select
       stn.id as station_id,
-      stn.station_ref,
+      stn.station_ref as station_ref,
       osc.next_due_at,
       osc.last_polled_at,
       coalesce(osc.last_observed_at, lo.last_observed_at) as last_observed_at,
@@ -355,22 +355,22 @@ begin
   ),
   tiered as (
     select
-      station_id,
-      station_ref,
-      due_at
-    from candidates
-    where due_at <= now()
-      and due_at >= now() - interval '3 hours'
-      and (last_polled_at is null or last_polled_at <= now() - interval '15 minutes')
+      c.station_id,
+      c.station_ref,
+      c.due_at
+    from candidates c
+    where c.due_at <= now()
+      and c.due_at >= now() - interval '3 hours'
+      and (c.last_polled_at is null or c.last_polled_at <= now() - interval '15 minutes')
     union all
     select
-      station_id,
-      station_ref,
-      due_at
-    from candidates
-    where due_at < now() - interval '3 hours'
-      and due_at >= now() - interval '24 hours'
-      and (last_polled_at is null or last_polled_at <= now() - interval '1 hour')
+      c.station_id,
+      c.station_ref,
+      c.due_at
+    from candidates c
+    where c.due_at < now() - interval '3 hours'
+      and c.due_at >= now() - interval '24 hours'
+      and (c.last_polled_at is null or c.last_polled_at <= now() - interval '1 hour')
   ),
   tiered_limited as (
     select *
@@ -393,15 +393,15 @@ begin
     limit stale_limit
   ),
   combined as (
-    select station_ref, 1 as group_order, due_at as sort_at
-    from tiered_limited
+    select tl.station_ref, 1 as group_order, tl.due_at as sort_at
+    from tiered_limited tl
     union all
-    select station_ref, 2 as group_order, null as sort_at
-    from stale
+    select s.station_ref, 2 as group_order, null as sort_at
+    from stale s
   )
   select combined.station_ref
   from combined
-  order by group_order, sort_at nulls last;
+  order by combined.group_order, combined.sort_at nulls last;
 end;
 $$;
 
