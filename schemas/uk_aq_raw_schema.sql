@@ -119,6 +119,22 @@ create table if not exists uk_air_sos_timeseries_checkpoints (
 create index if not exists uk_air_sos_timeseries_checkpoints_last_polled_at_idx
   on uk_air_sos_timeseries_checkpoints(last_polled_at);
 
+create table if not exists openaq_station_checkpoints (
+  station_id bigint primary key references stations(id) on delete cascade,
+  next_due_at timestamptz,
+  last_observed_at timestamptz,
+  observ_interval_samples int[] not null default '{}'::int[],
+  ingest_lag_samples int[] not null default '{}'::int[],
+  last_polled_at timestamptz,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create index if not exists openaq_station_checkpoints_next_due_at_idx
+  on openaq_station_checkpoints(next_due_at);
+create index if not exists openaq_station_checkpoints_last_polled_at_idx
+  on openaq_station_checkpoints(last_polled_at);
+
 create unique index if not exists stations_connector_ref_uidx
   on stations(connector_id, service_ref, station_ref);
 create index if not exists stations_geom_idx on stations using gist (geometry);
@@ -151,3 +167,582 @@ create index if not exists error_logs_source_idx on error_logs(source);
 create index if not exists error_logs_connector_idx on error_logs(connector_id);
 
 -- PM2.5 Population Exposure Indicator progress (PERT)
+
+-- Public RPCs for non-exposed schemas (service_role only)
+
+create or replace function uk_aq_public.uk_aq_rpc_connector_select(connector_code text)
+returns table (
+  id bigint,
+  connector_code text,
+  label text,
+  service_url text,
+  overwrite_station_name boolean
+)
+language sql
+security definer
+set search_path = uk_aq_core, uk_aq_raw, public, pg_catalog
+as $$
+  select c.id, c.connector_code, c.label, c.service_url, c.overwrite_station_name
+  from uk_aq_core.connectors c
+  where c.connector_code = $1
+  limit 1;
+$$;
+
+create or replace function uk_aq_public.uk_aq_rpc_station_names(
+  connector_id bigint,
+  service_ref text,
+  station_refs text[]
+)
+returns table (
+  station_ref text,
+  station_name text
+)
+language sql
+security definer
+set search_path = uk_aq_core, uk_aq_raw, public, pg_catalog
+as $$
+  select s.station_ref, s.station_name
+  from uk_aq_core.stations s
+  where s.connector_id = $1
+    and s.service_ref = $2
+    and s.station_ref = any($3);
+$$;
+
+create or replace function uk_aq_public.uk_aq_rpc_station_ids(
+  connector_id bigint,
+  service_ref text,
+  station_refs text[]
+)
+returns table (
+  station_ref text,
+  id bigint
+)
+language sql
+security definer
+set search_path = uk_aq_core, uk_aq_raw, public, pg_catalog
+as $$
+  select s.station_ref, s.id
+  from uk_aq_core.stations s
+  where s.connector_id = $1
+    and s.service_ref = $2
+    and s.station_ref = any($3);
+$$;
+
+create or replace function uk_aq_public.uk_aq_rpc_openaq_station_checkpoints_select(
+  station_ids bigint[]
+)
+returns table (
+  station_id bigint,
+  next_due_at timestamptz,
+  last_observed_at timestamptz,
+  observ_interval_samples int[],
+  ingest_lag_samples int[],
+  last_polled_at timestamptz
+)
+language sql
+security definer
+set search_path = uk_aq_raw, public, pg_catalog
+as $$
+  select
+    station_id,
+    next_due_at,
+    last_observed_at,
+    observ_interval_samples,
+    ingest_lag_samples,
+    last_polled_at
+  from uk_aq_raw.openaq_station_checkpoints
+  where station_id = any($1);
+$$;
+
+create or replace function uk_aq_public.uk_aq_rpc_openaq_station_checkpoints_upsert(rows jsonb)
+returns table (rows_upserted int)
+language plpgsql
+security definer
+set search_path = uk_aq_raw, public, pg_catalog
+as $$
+declare
+  count_rows int := 0;
+begin
+  if rows is null or jsonb_typeof(rows) <> 'array' or jsonb_array_length(rows) = 0 then
+    return query select 0;
+    return;
+  end if;
+  insert into uk_aq_raw.openaq_station_checkpoints (
+    station_id,
+    next_due_at,
+    last_observed_at,
+    observ_interval_samples,
+    ingest_lag_samples,
+    last_polled_at
+  )
+  select
+    r.station_id,
+    r.next_due_at,
+    r.last_observed_at,
+    r.observ_interval_samples,
+    r.ingest_lag_samples,
+    r.last_polled_at
+  from jsonb_to_recordset(rows) as r(
+    station_id bigint,
+    next_due_at timestamptz,
+    last_observed_at timestamptz,
+    observ_interval_samples int[],
+    ingest_lag_samples int[],
+    last_polled_at timestamptz
+  )
+  on conflict (station_id) do update set
+    next_due_at = excluded.next_due_at,
+    last_observed_at = excluded.last_observed_at,
+    observ_interval_samples = excluded.observ_interval_samples,
+    ingest_lag_samples = excluded.ingest_lag_samples,
+    last_polled_at = excluded.last_polled_at,
+    updated_at = now();
+  get diagnostics count_rows = row_count;
+  return query select count_rows;
+end;
+$$;
+
+create or replace function uk_aq_public.uk_aq_rpc_openaq_select_station_refs(
+  batch_limit integer default 50,
+  stale_limit integer default 10
+)
+returns table (
+  station_ref text
+)
+language plpgsql
+security definer
+set search_path = uk_aq_core, uk_aq_raw, public, pg_catalog
+as $$
+declare
+  v_connector_id bigint;
+begin
+  select id into v_connector_id
+  from uk_aq_core.connectors
+  where connector_code = 'openaq'
+  limit 1;
+
+  if v_connector_id is null then
+    return;
+  end if;
+
+  return query
+  with latest_obs as (
+    select
+      t.station_id,
+      max(t.last_value_at) as last_observed_at
+    from uk_aq_core.timeseries t
+    where t.connector_id = v_connector_id
+      and t.service_ref = 'openaq'
+    group by t.station_id
+  ),
+  candidates as (
+    select
+      stn.id as station_id,
+      stn.station_ref,
+      osc.next_due_at,
+      osc.last_polled_at,
+      coalesce(osc.last_observed_at, lo.last_observed_at) as last_observed_at,
+      coalesce(osc.next_due_at, now()) as due_at
+    from uk_aq_core.stations stn
+    left join uk_aq_raw.openaq_station_checkpoints osc
+      on osc.station_id = stn.id
+    left join latest_obs lo
+      on lo.station_id = stn.id
+    where stn.connector_id = v_connector_id
+      and stn.service_ref = 'openaq'
+      and stn.station_ref is not null
+      and stn.removed_at is null
+  ),
+  tiered as (
+    select
+      station_id,
+      station_ref,
+      due_at
+    from candidates
+    where due_at <= now()
+      and due_at >= now() - interval '3 hours'
+      and (last_polled_at is null or last_polled_at <= now() - interval '15 minutes')
+    union all
+    select
+      station_id,
+      station_ref,
+      due_at
+    from candidates
+    where due_at < now() - interval '3 hours'
+      and due_at >= now() - interval '24 hours'
+      and (last_polled_at is null or last_polled_at <= now() - interval '1 hour')
+  ),
+  tiered_limited as (
+    select *
+    from tiered
+    order by due_at asc
+    limit batch_limit
+  ),
+  stale as (
+    select
+      c.station_id,
+      c.station_ref,
+      c.last_observed_at
+    from candidates c
+    where (c.last_observed_at is null or c.last_observed_at <= now() - interval '24 hours')
+      and (c.last_polled_at is null or c.last_polled_at <= now() - interval '12 hours')
+      and not exists (
+        select 1 from tiered_limited t where t.station_id = c.station_id
+      )
+    order by c.last_observed_at nulls first
+    limit stale_limit
+  ),
+  combined as (
+    select station_ref, 1 as group_order, due_at as sort_at
+    from tiered_limited
+    union all
+    select station_ref, 2 as group_order, null as sort_at
+    from stale
+  )
+  select combined.station_ref
+  from combined
+  order by group_order, sort_at nulls last;
+end;
+$$;
+
+create or replace function uk_aq_public.uk_aq_rpc_stations_upsert(rows jsonb)
+returns table (stations_upserted int)
+language plpgsql
+security definer
+set search_path = uk_aq_core, uk_aq_raw, public, pg_catalog
+as $$
+declare
+  count_rows int := 0;
+begin
+  if rows is null or jsonb_typeof(rows) <> 'array' or jsonb_array_length(rows) = 0 then
+    return query select 0;
+    return;
+  end if;
+  insert into uk_aq_core.stations (
+    station_ref,
+    service_ref,
+    label,
+    station_name,
+    station_type,
+    region,
+    geometry,
+    connector_id,
+    last_seen_at,
+    removed_at
+  )
+  select
+    r.station_ref,
+    r.service_ref,
+    r.label,
+    r.station_name,
+    r.station_type,
+    r.region,
+    case
+      when r.geometry is null or r.geometry = '' then null
+      else ST_GeogFromText(r.geometry)
+    end,
+    r.connector_id,
+    r.last_seen_at,
+    r.removed_at
+  from jsonb_to_recordset(rows) as r(
+    station_ref text,
+    service_ref text,
+    label text,
+    station_name text,
+    station_type text,
+    region text,
+    geometry text,
+    connector_id bigint,
+    last_seen_at timestamptz,
+    removed_at timestamptz
+  )
+  on conflict (connector_id, service_ref, station_ref) do update set
+    label = excluded.label,
+    station_name = excluded.station_name,
+    station_type = excluded.station_type,
+    region = excluded.region,
+    geometry = excluded.geometry,
+    last_seen_at = excluded.last_seen_at,
+    removed_at = excluded.removed_at;
+  get diagnostics count_rows = row_count;
+  return query select count_rows;
+end;
+$$;
+
+create or replace function uk_aq_public.uk_aq_rpc_phenomena_upsert(rows jsonb)
+returns table (phenomena_upserted int)
+language plpgsql
+security definer
+set search_path = uk_aq_core, uk_aq_raw, public, pg_catalog
+as $$
+declare
+  count_rows int := 0;
+begin
+  if rows is null or jsonb_typeof(rows) <> 'array' or jsonb_array_length(rows) = 0 then
+    return query select 0;
+    return;
+  end if;
+  insert into uk_aq_core.phenomena (
+    connector_id,
+    eionet_uri,
+    label,
+    notation,
+    pollutant_label
+  )
+  select
+    r.connector_id,
+    r.eionet_uri,
+    r.label,
+    r.notation,
+    r.pollutant_label
+  from jsonb_to_recordset(rows) as r(
+    connector_id bigint,
+    eionet_uri text,
+    label text,
+    notation text,
+    pollutant_label text
+  )
+  on conflict (connector_id, eionet_uri) do update set
+    label = excluded.label,
+    notation = excluded.notation,
+    pollutant_label = excluded.pollutant_label;
+  get diagnostics count_rows = row_count;
+  return query select count_rows;
+end;
+$$;
+
+create or replace function uk_aq_public.uk_aq_rpc_phenomena_ids(
+  connector_id bigint,
+  eionet_uris text[]
+)
+returns table (
+  eionet_uri text,
+  id bigint
+)
+language sql
+security definer
+set search_path = uk_aq_core, uk_aq_raw, public, pg_catalog
+as $$
+  select p.eionet_uri, p.id
+  from uk_aq_core.phenomena p
+  where p.connector_id = $1
+    and p.eionet_uri = any($2);
+$$;
+
+create or replace function uk_aq_public.uk_aq_rpc_timeseries_upsert(rows jsonb)
+returns table (timeseries_upserted int)
+language plpgsql
+security definer
+set search_path = uk_aq_core, uk_aq_raw, public, pg_catalog
+as $$
+declare
+  count_rows int := 0;
+begin
+  if rows is null or jsonb_typeof(rows) <> 'array' or jsonb_array_length(rows) = 0 then
+    return query select 0;
+    return;
+  end if;
+  insert into uk_aq_core.timeseries (
+    timeseries_ref,
+    label,
+    uom,
+    station_id,
+    connector_id,
+    service_ref,
+    phenomenon_id
+  )
+  select
+    r.timeseries_ref,
+    r.label,
+    r.uom,
+    r.station_id,
+    r.connector_id,
+    r.service_ref,
+    r.phenomenon_id
+  from jsonb_to_recordset(rows) as r(
+    timeseries_ref text,
+    label text,
+    uom text,
+    station_id bigint,
+    connector_id bigint,
+    service_ref text,
+    phenomenon_id bigint
+  )
+  on conflict (connector_id, service_ref, timeseries_ref) do update set
+    label = excluded.label,
+    uom = excluded.uom,
+    station_id = excluded.station_id,
+    phenomenon_id = excluded.phenomenon_id;
+  get diagnostics count_rows = row_count;
+  return query select count_rows;
+end;
+$$;
+
+create or replace function uk_aq_public.uk_aq_rpc_timeseries_ids(
+  connector_id bigint,
+  service_ref text,
+  timeseries_refs text[]
+)
+returns table (
+  timeseries_ref text,
+  id bigint
+)
+language sql
+security definer
+set search_path = uk_aq_core, uk_aq_raw, public, pg_catalog
+as $$
+  select t.timeseries_ref, t.id
+  from uk_aq_core.timeseries t
+  where t.connector_id = $1
+    and t.service_ref = $2
+    and t.timeseries_ref = any($3);
+$$;
+
+create or replace function uk_aq_public.uk_aq_rpc_observations_upsert(rows jsonb)
+returns table (observations_upserted int)
+language plpgsql
+security definer
+set search_path = uk_aq_core, uk_aq_raw, public, pg_catalog
+as $$
+declare
+  count_rows int := 0;
+begin
+  if rows is null or jsonb_typeof(rows) <> 'array' or jsonb_array_length(rows) = 0 then
+    return query select 0;
+    return;
+  end if;
+  insert into uk_aq_core.observations (
+    connector_id,
+    timeseries_id,
+    observed_at,
+    value,
+    status
+  )
+  select
+    r.connector_id,
+    r.timeseries_id,
+    r.observed_at,
+    r.value,
+    r.status
+  from jsonb_to_recordset(rows) as r(
+    connector_id bigint,
+    timeseries_id bigint,
+    observed_at timestamptz,
+    value numeric,
+    status text
+  )
+  on conflict (connector_id, timeseries_id, observed_at) do update set
+    value = excluded.value,
+    status = excluded.status;
+  get diagnostics count_rows = row_count;
+  return query select count_rows;
+end;
+$$;
+
+create or replace function uk_aq_public.uk_aq_rpc_timeseries_last_values_update(rows jsonb)
+returns table (timeseries_updated int)
+language plpgsql
+security definer
+set search_path = uk_aq_core, uk_aq_raw, public, pg_catalog
+as $$
+declare
+  count_rows int := 0;
+begin
+  if rows is null or jsonb_typeof(rows) <> 'array' or jsonb_array_length(rows) = 0 then
+    return query select 0;
+    return;
+  end if;
+  with updates as (
+    select * from jsonb_to_recordset(rows) as r(
+      id bigint,
+      last_value numeric,
+      last_value_at timestamptz
+    )
+  )
+  update uk_aq_core.timeseries t
+  set last_value = u.last_value,
+      last_value_at = u.last_value_at
+  from updates u
+  where t.id = u.id;
+  get diagnostics count_rows = row_count;
+  return query select count_rows;
+end;
+$$;
+
+create or replace function uk_aq_public.uk_aq_rpc_error_log_insert(entry jsonb)
+returns table (id uuid)
+language plpgsql
+security definer
+set search_path = uk_aq_raw, uk_aq_core, public, pg_catalog
+as $$
+declare
+  new_id uuid;
+begin
+  insert into uk_aq_raw.error_logs (
+    source,
+    severity,
+    message,
+    stack,
+    context,
+    connector_id,
+    station_id,
+    timeseries_id,
+    dropbox_path
+  )
+  values (
+    coalesce(entry->>'source', 'unknown'),
+    coalesce(entry->>'severity', 'error'),
+    coalesce(entry->>'message', 'unknown'),
+    entry->>'stack',
+    entry->'context',
+    nullif(entry->>'connector_id', '')::bigint,
+    nullif(entry->>'station_id', '')::bigint,
+    nullif(entry->>'timeseries_id', '')::bigint,
+    entry->>'dropbox_path'
+  )
+  returning uk_aq_raw.error_logs.id into new_id;
+  return query select new_id;
+end;
+$$;
+
+revoke all on function uk_aq_public.uk_aq_rpc_connector_select(text) from public;
+grant execute on function uk_aq_public.uk_aq_rpc_connector_select(text) to service_role;
+
+revoke all on function uk_aq_public.uk_aq_rpc_station_names(bigint, text, text[]) from public;
+grant execute on function uk_aq_public.uk_aq_rpc_station_names(bigint, text, text[]) to service_role;
+
+revoke all on function uk_aq_public.uk_aq_rpc_station_ids(bigint, text, text[]) from public;
+grant execute on function uk_aq_public.uk_aq_rpc_station_ids(bigint, text, text[]) to service_role;
+
+revoke all on function uk_aq_public.uk_aq_rpc_openaq_station_checkpoints_select(bigint[]) from public;
+grant execute on function uk_aq_public.uk_aq_rpc_openaq_station_checkpoints_select(bigint[]) to service_role;
+
+revoke all on function uk_aq_public.uk_aq_rpc_openaq_station_checkpoints_upsert(jsonb) from public;
+grant execute on function uk_aq_public.uk_aq_rpc_openaq_station_checkpoints_upsert(jsonb) to service_role;
+
+revoke all on function uk_aq_public.uk_aq_rpc_openaq_select_station_refs(integer, integer) from public;
+grant execute on function uk_aq_public.uk_aq_rpc_openaq_select_station_refs(integer, integer) to service_role;
+
+revoke all on function uk_aq_public.uk_aq_rpc_stations_upsert(jsonb) from public;
+grant execute on function uk_aq_public.uk_aq_rpc_stations_upsert(jsonb) to service_role;
+
+revoke all on function uk_aq_public.uk_aq_rpc_phenomena_upsert(jsonb) from public;
+grant execute on function uk_aq_public.uk_aq_rpc_phenomena_upsert(jsonb) to service_role;
+
+revoke all on function uk_aq_public.uk_aq_rpc_phenomena_ids(bigint, text[]) from public;
+grant execute on function uk_aq_public.uk_aq_rpc_phenomena_ids(bigint, text[]) to service_role;
+
+revoke all on function uk_aq_public.uk_aq_rpc_timeseries_upsert(jsonb) from public;
+grant execute on function uk_aq_public.uk_aq_rpc_timeseries_upsert(jsonb) to service_role;
+
+revoke all on function uk_aq_public.uk_aq_rpc_timeseries_ids(bigint, text, text[]) from public;
+grant execute on function uk_aq_public.uk_aq_rpc_timeseries_ids(bigint, text, text[]) to service_role;
+
+revoke all on function uk_aq_public.uk_aq_rpc_observations_upsert(jsonb) from public;
+grant execute on function uk_aq_public.uk_aq_rpc_observations_upsert(jsonb) to service_role;
+
+revoke all on function uk_aq_public.uk_aq_rpc_timeseries_last_values_update(jsonb) from public;
+grant execute on function uk_aq_public.uk_aq_rpc_timeseries_last_values_update(jsonb) to service_role;
+
+revoke all on function uk_aq_public.uk_aq_rpc_error_log_insert(jsonb) from public;
+grant execute on function uk_aq_public.uk_aq_rpc_error_log_insert(jsonb) to service_role;
