@@ -100,6 +100,21 @@ create table if not exists breathelondon_timeseries_checkpoints (
 create index if not exists breathelondon_timeseries_checkpoints_last_obs_idx
   on breathelondon_timeseries_checkpoints(last_observed_at);
 
+create table if not exists breathelondon_station_checkpoints (
+  station_id bigint primary key references stations(id) on delete cascade,
+  next_due_at timestamptz,
+  last_observed_at timestamptz,
+  ingest_lag_samples int[] not null default '{}'::int[],
+  last_polled_at timestamptz,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create index if not exists breathelondon_station_checkpoints_next_due_at_idx
+  on breathelondon_station_checkpoints(next_due_at);
+create index if not exists breathelondon_station_checkpoints_last_polled_at_idx
+  on breathelondon_station_checkpoints(last_polled_at);
+
 create table if not exists erg_laqn_station_checkpoints (
   station_id bigint primary key references stations(id) on delete cascade,
   last_polled_at timestamptz,
@@ -134,6 +149,25 @@ create index if not exists openaq_station_checkpoints_next_due_at_idx
   on openaq_station_checkpoints(next_due_at);
 create index if not exists openaq_station_checkpoints_last_polled_at_idx
   on openaq_station_checkpoints(last_polled_at);
+
+create table if not exists openaq_timeseries_checkpoints (
+  station_id bigint not null references stations(id) on delete cascade,
+  timeseries_id bigint not null references timeseries(id) on delete cascade,
+  next_due_at timestamptz,
+  last_observed_at timestamptz,
+  ingest_lag_samples int[] not null default '{}'::int[],
+  last_polled_at timestamptz,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  primary key (station_id, timeseries_id)
+);
+
+create index if not exists openaq_timeseries_checkpoints_next_due_at_idx
+  on openaq_timeseries_checkpoints(next_due_at);
+create index if not exists openaq_timeseries_checkpoints_last_polled_at_idx
+  on openaq_timeseries_checkpoints(last_polled_at);
+create index if not exists openaq_timeseries_checkpoints_timeseries_id_idx
+  on openaq_timeseries_checkpoints(timeseries_id);
 
 create unique index if not exists stations_connector_ref_uidx
   on stations(connector_id, service_ref, station_ref);
@@ -294,6 +328,79 @@ begin
     next_due_at = excluded.next_due_at,
     last_observed_at = excluded.last_observed_at,
     observ_interval_samples = excluded.observ_interval_samples,
+    ingest_lag_samples = excluded.ingest_lag_samples,
+    last_polled_at = excluded.last_polled_at,
+    updated_at = now();
+  get diagnostics count_rows = row_count;
+  return query select count_rows;
+end;
+$$;
+
+create or replace function uk_aq_public.uk_aq_rpc_openaq_timeseries_checkpoints_select(
+  station_ids bigint[]
+)
+returns table (
+  station_id bigint,
+  timeseries_id bigint,
+  next_due_at timestamptz,
+  last_observed_at timestamptz,
+  ingest_lag_samples int[],
+  last_polled_at timestamptz
+)
+language sql
+security definer
+set search_path = uk_aq_raw, public, pg_catalog
+as $$
+  select
+    station_id,
+    timeseries_id,
+    next_due_at,
+    last_observed_at,
+    ingest_lag_samples,
+    last_polled_at
+  from uk_aq_raw.openaq_timeseries_checkpoints
+  where station_id = any($1);
+$$;
+
+create or replace function uk_aq_public.uk_aq_rpc_openaq_timeseries_checkpoints_upsert(rows jsonb)
+returns table (rows_upserted int)
+language plpgsql
+security definer
+set search_path = uk_aq_raw, public, pg_catalog
+as $$
+declare
+  count_rows int := 0;
+begin
+  if rows is null or jsonb_typeof(rows) <> 'array' or jsonb_array_length(rows) = 0 then
+    return query select 0;
+    return;
+  end if;
+  insert into uk_aq_raw.openaq_timeseries_checkpoints (
+    station_id,
+    timeseries_id,
+    next_due_at,
+    last_observed_at,
+    ingest_lag_samples,
+    last_polled_at
+  )
+  select
+    r.station_id,
+    r.timeseries_id,
+    r.next_due_at,
+    r.last_observed_at,
+    r.ingest_lag_samples,
+    r.last_polled_at
+  from jsonb_to_recordset(rows) as r(
+    station_id bigint,
+    timeseries_id bigint,
+    next_due_at timestamptz,
+    last_observed_at timestamptz,
+    ingest_lag_samples int[],
+    last_polled_at timestamptz
+  )
+  on conflict (station_id, timeseries_id) do update set
+    next_due_at = excluded.next_due_at,
+    last_observed_at = excluded.last_observed_at,
     ingest_lag_samples = excluded.ingest_lag_samples,
     last_polled_at = excluded.last_polled_at,
     updated_at = now();
@@ -805,6 +912,12 @@ grant execute on function uk_aq_public.uk_aq_rpc_openaq_station_checkpoints_sele
 
 revoke all on function uk_aq_public.uk_aq_rpc_openaq_station_checkpoints_upsert(jsonb) from public;
 grant execute on function uk_aq_public.uk_aq_rpc_openaq_station_checkpoints_upsert(jsonb) to service_role;
+
+revoke all on function uk_aq_public.uk_aq_rpc_openaq_timeseries_checkpoints_select(bigint[]) from public;
+grant execute on function uk_aq_public.uk_aq_rpc_openaq_timeseries_checkpoints_select(bigint[]) to service_role;
+
+revoke all on function uk_aq_public.uk_aq_rpc_openaq_timeseries_checkpoints_upsert(jsonb) from public;
+grant execute on function uk_aq_public.uk_aq_rpc_openaq_timeseries_checkpoints_upsert(jsonb) to service_role;
 
 revoke all on function uk_aq_public.uk_aq_rpc_openaq_select_station_refs(integer, integer) from public;
 grant execute on function uk_aq_public.uk_aq_rpc_openaq_select_station_refs(integer, integer) to service_role;
