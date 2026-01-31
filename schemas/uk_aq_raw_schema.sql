@@ -357,16 +357,18 @@ begin
     select
       c.station_id,
       c.station_ref,
-      c.due_at
+      c.due_at,
+      c.last_polled_at
     from candidates c
     where c.due_at <= now()
       and c.due_at >= now() - interval '3 hours'
-      and (c.last_polled_at is null or c.last_polled_at <= now() - interval '15 minutes')
+      and (c.last_polled_at is null or c.last_polled_at <= now() - interval '5 minutes')
     union all
     select
       c.station_id,
       c.station_ref,
-      c.due_at
+      c.due_at,
+      c.last_polled_at
     from candidates c
     where c.due_at < now() - interval '3 hours'
       and c.due_at >= now() - interval '24 hours'
@@ -375,7 +377,7 @@ begin
   tiered_limited as (
     select *
     from tiered
-    order by due_at asc
+    order by last_polled_at asc nulls first, due_at asc
     limit batch_limit
   ),
   stale as (
@@ -402,6 +404,55 @@ begin
   select combined.station_ref
   from combined
   order by combined.group_order, combined.sort_at nulls last;
+end;
+$$;
+
+create or replace function uk_aq_public.uk_aq_rpc_dispatch_claim(
+  p_connector_code text,
+  p_run_started_at timestamptz,
+  p_timeout_minutes integer default 10
+)
+returns table (
+  claimed boolean,
+  connector_id bigint,
+  last_run_start timestamptz,
+  last_run_end timestamptz
+)
+language plpgsql
+security definer
+set search_path = uk_aq_core, uk_aq_raw, public, pg_catalog
+as $$
+declare
+  v_timeout interval;
+begin
+  if auth.role() <> 'service_role' then
+    raise exception 'service_role required';
+  end if;
+
+  v_timeout := make_interval(mins => greatest(1, coalesce(p_timeout_minutes, 10)));
+
+  return query
+  with updated as (
+    update uk_aq_core.connectors c
+    set
+      last_run_start = p_run_started_at,
+      last_run_end = null,
+      last_run_status = 'running',
+      last_run_message = 'dispatching'
+    where c.connector_code = p_connector_code
+      and (
+        c.last_run_end is not null
+        or c.last_run_start is null
+        or c.last_run_start <= now() - v_timeout
+      )
+    returning c.id, c.last_run_start, c.last_run_end
+  )
+  select
+    (count(*) > 0) as claimed,
+    max(updated.id) as connector_id,
+    max(updated.last_run_start) as last_run_start,
+    max(updated.last_run_end) as last_run_end
+  from updated;
 end;
 $$;
 
@@ -464,6 +515,41 @@ begin
     geometry = excluded.geometry,
     last_seen_at = excluded.last_seen_at,
     removed_at = excluded.removed_at;
+  get diagnostics count_rows = row_count;
+  return query select count_rows;
+end;
+$$;
+
+create or replace function uk_aq_public.uk_aq_rpc_station_metadata_upsert(rows jsonb)
+returns table (station_metadata_upserted int)
+language plpgsql
+security definer
+set search_path = uk_aq_core, uk_aq_raw, public, pg_catalog
+as $$
+declare
+  count_rows int := 0;
+begin
+  if rows is null or jsonb_typeof(rows) <> 'array' or jsonb_array_length(rows) = 0 then
+    return query select 0;
+    return;
+  end if;
+  insert into uk_aq_core.station_metadata (
+    station_id,
+    attributes,
+    updated_at
+  )
+  select
+    r.station_id,
+    coalesce(r.attributes, '{}'::jsonb),
+    coalesce(r.updated_at, now())
+  from jsonb_to_recordset(rows) as r(
+    station_id bigint,
+    attributes jsonb,
+    updated_at timestamptz
+  )
+  on conflict (station_id) do update set
+    attributes = uk_aq_core.station_metadata.attributes || excluded.attributes,
+    updated_at = excluded.updated_at;
   get diagnostics count_rows = row_count;
   return query select count_rows;
 end;
@@ -723,8 +809,14 @@ grant execute on function uk_aq_public.uk_aq_rpc_openaq_station_checkpoints_upse
 revoke all on function uk_aq_public.uk_aq_rpc_openaq_select_station_refs(integer, integer) from public;
 grant execute on function uk_aq_public.uk_aq_rpc_openaq_select_station_refs(integer, integer) to service_role;
 
+revoke all on function uk_aq_public.uk_aq_rpc_dispatch_claim(text, timestamptz, integer) from public;
+grant execute on function uk_aq_public.uk_aq_rpc_dispatch_claim(text, timestamptz, integer) to service_role;
+
 revoke all on function uk_aq_public.uk_aq_rpc_stations_upsert(jsonb) from public;
 grant execute on function uk_aq_public.uk_aq_rpc_stations_upsert(jsonb) to service_role;
+
+revoke all on function uk_aq_public.uk_aq_rpc_station_metadata_upsert(jsonb) from public;
+grant execute on function uk_aq_public.uk_aq_rpc_station_metadata_upsert(jsonb) to service_role;
 
 revoke all on function uk_aq_public.uk_aq_rpc_phenomena_upsert(jsonb) from public;
 grant execute on function uk_aq_public.uk_aq_rpc_phenomena_upsert(jsonb) to service_role;
