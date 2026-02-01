@@ -414,7 +414,8 @@ create or replace function uk_aq_public.uk_aq_rpc_openaq_select_station_refs(
   stale_limit integer default 10
 )
 returns table (
-  station_ref text
+  station_ref text,
+  station_id bigint
 )
 language plpgsql
 security definer
@@ -502,13 +503,13 @@ begin
     limit stale_limit
   ),
   combined as (
-    select tl.station_ref, 1 as group_order, tl.due_at as sort_at
+    select tl.station_ref, tl.station_id, 1 as group_order, tl.due_at as sort_at
     from tiered_limited tl
     union all
-    select s.station_ref, 2 as group_order, null as sort_at
+    select s.station_ref, s.station_id, 2 as group_order, null as sort_at
     from stale s
   )
-  select combined.station_ref
+  select combined.station_ref, combined.station_id
   from combined
   order by combined.group_order, combined.sort_at nulls last;
 end;
@@ -791,6 +792,27 @@ as $$
     and t.timeseries_ref = any($3);
 $$;
 
+create or replace function uk_aq_public.uk_aq_rpc_timeseries_refs_by_station_ids(
+  connector_id bigint,
+  service_ref text,
+  station_ids bigint[]
+)
+returns table (
+  station_id bigint,
+  timeseries_id bigint,
+  timeseries_ref text
+)
+language sql
+security definer
+set search_path = uk_aq_core, uk_aq_raw, public, pg_catalog
+as $$
+  select t.station_id, t.id as timeseries_id, t.timeseries_ref
+  from uk_aq_core.timeseries t
+  where t.connector_id = $1
+    and t.service_ref = $2
+    and t.station_id = any($3);
+$$;
+
 create or replace function uk_aq_public.uk_aq_rpc_observations_upsert(rows jsonb)
 returns table (observations_upserted int)
 language plpgsql
@@ -942,6 +964,17 @@ grant execute on function uk_aq_public.uk_aq_rpc_timeseries_upsert(jsonb) to ser
 
 revoke all on function uk_aq_public.uk_aq_rpc_timeseries_ids(bigint, text, text[]) from public;
 grant execute on function uk_aq_public.uk_aq_rpc_timeseries_ids(bigint, text, text[]) to service_role;
+
+revoke all on function uk_aq_public.uk_aq_rpc_timeseries_refs_by_station_ids(
+  bigint,
+  text,
+  bigint[]
+) from public;
+grant execute on function uk_aq_public.uk_aq_rpc_timeseries_refs_by_station_ids(
+  bigint,
+  text,
+  bigint[]
+) to service_role;
 
 revoke all on function uk_aq_public.uk_aq_rpc_observations_upsert(jsonb) from public;
 grant execute on function uk_aq_public.uk_aq_rpc_observations_upsert(jsonb) to service_role;
