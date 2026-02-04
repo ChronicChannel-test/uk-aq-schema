@@ -46,3 +46,13 @@ No scripted commands were found in this repo. There is no preferred schema-apply
 - Ingest repo (sibling): `../CIC-test-uk-aq-ingest`
 - Naming conventions (ingest repo): `../CIC-test-uk-aq-ingest/AGENTS.md`
 - History repo (sibling): `../CIC-test-uk-aq-history/uk-aq-history`
+
+## WORKING STYLE (IMPORTANT)
+
+REQUIRED OUTPUT FORMAT
+
+Summary (2–5 bullets)
+Files changed (paths)
+Implementation details (short, specific)
+Supabase steps (instructions only,)
+Verification checklist (clear pass/fail)
