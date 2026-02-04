@@ -36,6 +36,9 @@ No scripted commands were found in this repo. There is no preferred schema-apply
 - RPC and view names are prefixed with `uk_aq_`.
 - Naming conventions (project-wide) live in the ingest repo: `../CIC-test-uk-aq-ingest/AGENTS.md`.
 
+## Permissions (REQUIRED)
+- The agent may edit any files without asking for permission, except files under any `/archive` directory.
+
 ## Links
 - Existing README: `README.md`
 - Schemas directory: `schemas/`
