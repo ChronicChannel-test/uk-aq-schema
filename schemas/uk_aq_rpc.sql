@@ -254,7 +254,7 @@ grant execute on function uk_aq_public.uk_aq_latest_rpc(
 create or replace function uk_aq_public.uk_aq_timeseries_rpc(
   timeseries_id bigint,
   window_label text default '24h',
-  limit_rows int default 20000
+  limit_rows int default null
 )
 returns table (
   timeseries_id bigint,
@@ -277,7 +277,10 @@ as $$
           then lower(nullif(trim(window_label), ''))
         else '24h'
       end as window_label,
-      least(10000, greatest(1, coalesce(limit_rows, 20000)))::int as limit_rows
+      case
+        when limit_rows is null then null
+        else greatest(1, limit_rows)::int
+      end as limit_rows
   ),
   windowed as (
     select
@@ -354,7 +357,7 @@ as $$
     join windowed w on w.timeseries_id = o.timeseries_id
     where o.observed_at >= w.start_ts
     order by o.observed_at asc
-    limit (select limit_rows from windowed)
+    limit coalesce((select limit_rows from windowed), 2147483647)
   )
   select
     w.timeseries_id,
