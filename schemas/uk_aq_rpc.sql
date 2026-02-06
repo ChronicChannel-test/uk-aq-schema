@@ -60,7 +60,8 @@ create or replace function uk_aq_public.uk_aq_latest_rpc(
   station_like text default null,
   connector_id bigint default null,
   pollutant text default null,
-  limit_rows int default 1000
+  limit_rows int default 1000,
+  window_label text default null
 )
 returns table (
   id bigint,
@@ -85,7 +86,12 @@ as $$
       nullif(trim(station_like), '') as station_like,
       connector_id as connector_id,
       nullif(trim(pollutant), '') as pollutant,
-      least(10000, greatest(1, coalesce(limit_rows, 1000)))::int as limit_rows
+      least(10000, greatest(1, coalesce(limit_rows, 1000)))::int as limit_rows,
+      case
+        when lower(nullif(trim(window_label), '')) in ('3h','6h','1d','7d','all')
+          then lower(nullif(trim(window_label), ''))
+        else 'all'
+      end as window_label
   ),
   pollutant_tokens as (
     select
@@ -178,6 +184,13 @@ as $$
       and (params.region is null or s.region ilike '%' || params.region || '%')
       and (params.pcon_code is null or s.pcon_code = params.pcon_code)
       and (
+        params.window_label = 'all'
+        or (params.window_label = '3h' and ts.last_value_at >= now() - interval '3 hours')
+        or (params.window_label = '6h' and ts.last_value_at >= now() - interval '6 hours')
+        or (params.window_label = '1d' and ts.last_value_at >= now() - interval '1 day')
+        or (params.window_label = '7d' and ts.last_value_at >= now() - interval '7 days')
+      )
+      and (
         params.pollutant is null
         or exists (
           select 1
@@ -237,7 +250,8 @@ grant execute on function uk_aq_public.uk_aq_latest_rpc(
   text,
   bigint,
   text,
-  int
+  int,
+  text
 ) to anon, authenticated;
 
 grant execute on function uk_aq_public.uk_aq_latest_rpc(
@@ -246,7 +260,8 @@ grant execute on function uk_aq_public.uk_aq_latest_rpc(
   text,
   bigint,
   text,
-  int
+  int,
+  text
 ) to service_role;
 
 -- uk_aq_timeseries RPC for read-only access (Edge function backing).
