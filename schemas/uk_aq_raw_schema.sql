@@ -90,7 +90,7 @@ create table if not exists breathelondon_timeseries_checkpoints (
   species text not null,
   timeseries_id bigint references timeseries(id) on delete set null,
   last_observed_at timestamptz,
-  last_fetch_at timestamptz,
+  last_polled_at timestamptz,
   last_error text,
   created_at timestamptz default now(),
   updated_at timestamptz default now(),
