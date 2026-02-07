@@ -54,6 +54,27 @@ grant execute on function uk_aq_public.uk_aq_la_hex_rpc(
 ) to service_role;
 -- uk_aq_latest RPC for read-only access (Edge function backing).
 
+drop function if exists uk_aq_public.uk_aq_latest_rpc(
+  text,
+  text,
+  text,
+  bigint,
+  text,
+  int,
+  text
+);
+
+drop function if exists uk_aq_public.uk_aq_latest_rpc(
+  text,
+  text,
+  text,
+  bigint,
+  text,
+  int,
+  text,
+  timestamptz
+);
+
 create or replace function uk_aq_public.uk_aq_latest_rpc(
   region text default null,
   pcon_code text default null,
@@ -61,7 +82,8 @@ create or replace function uk_aq_public.uk_aq_latest_rpc(
   connector_id bigint default null,
   pollutant text default null,
   limit_rows int default 1000,
-  window_label text default null
+  window_label text default null,
+  since_ts timestamptz default null
 )
 returns table (
   id bigint,
@@ -87,6 +109,7 @@ as $$
       connector_id as connector_id,
       nullif(trim(pollutant), '') as pollutant,
       least(10000, greatest(1, coalesce(limit_rows, 1000)))::int as limit_rows,
+      since_ts as since_ts,
       case
         when lower(nullif(trim(window_label), '')) in ('3h','6h','1d','7d','all')
           then lower(nullif(trim(window_label), ''))
@@ -183,6 +206,7 @@ as $$
       and (params.connector_id is null or ts.connector_id = params.connector_id)
       and (params.region is null or s.region ilike '%' || params.region || '%')
       and (params.pcon_code is null or s.pcon_code = params.pcon_code)
+      and (params.since_ts is null or ts.last_value_at > params.since_ts)
       and (
         params.window_label = 'all'
         or (params.window_label = '3h' and ts.last_value_at >= now() - interval '3 hours')
@@ -205,7 +229,7 @@ as $$
     from base
     where (select station_like from params) is null
        or base.label ilike '%' || (select station_like from params) || '%'
-    order by base.id
+    order by base.last_value_at asc, base.id
     limit (select limit_rows from params)
   ),
   station_matches as (
@@ -213,7 +237,7 @@ as $$
     from base
     where (select station_like from params) is not null
       and base.station_label ilike '%' || (select station_like from params) || '%'
-    order by base.id
+    order by base.last_value_at asc, base.id
     limit (select limit_rows from params)
   ),
   combined as (
@@ -251,7 +275,8 @@ grant execute on function uk_aq_public.uk_aq_latest_rpc(
   bigint,
   text,
   int,
-  text
+  text,
+  timestamptz
 ) to anon, authenticated;
 
 grant execute on function uk_aq_public.uk_aq_latest_rpc(
@@ -261,15 +286,30 @@ grant execute on function uk_aq_public.uk_aq_latest_rpc(
   bigint,
   text,
   int,
-  text
+  text,
+  timestamptz
 ) to service_role;
 
 -- uk_aq_timeseries RPC for read-only access (Edge function backing).
 
+drop function if exists uk_aq_public.uk_aq_timeseries_rpc(
+  bigint,
+  text,
+  int
+);
+
+drop function if exists uk_aq_public.uk_aq_timeseries_rpc(
+  bigint,
+  text,
+  int,
+  timestamptz
+);
+
 create or replace function uk_aq_public.uk_aq_timeseries_rpc(
   timeseries_id bigint,
   window_label text default '24h',
-  limit_rows int default null
+  limit_rows int default null,
+  since_ts timestamptz default null
 )
 returns table (
   timeseries_id bigint,
@@ -295,7 +335,8 @@ as $$
       case
         when limit_rows is null then null
         else greatest(1, limit_rows)::int
-      end as limit_rows
+      end as limit_rows,
+      since_ts as since_ts
   ),
   windowed as (
     select
@@ -309,7 +350,8 @@ as $$
         when '30d' then now() - interval '30 days'
         else now() - interval '24 hours'
       end as start_ts,
-      limit_rows
+      limit_rows,
+      since_ts
     from params
   ),
   phen as (
@@ -371,6 +413,7 @@ as $$
     from uk_aq_core.observations o
     join windowed w on w.timeseries_id = o.timeseries_id
     where o.observed_at >= w.start_ts
+      and (w.since_ts is null or o.observed_at > w.since_ts)
     order by o.observed_at asc
     limit coalesce((select limit_rows from windowed), 2147483647)
   )
@@ -398,13 +441,15 @@ $$;
 grant execute on function uk_aq_public.uk_aq_timeseries_rpc(
   bigint,
   text,
-  int
+  int,
+  timestamptz
 ) to anon, authenticated;
 
 grant execute on function uk_aq_public.uk_aq_timeseries_rpc(
   bigint,
   text,
-  int
+  int,
+  timestamptz
 ) to service_role;
 
 -- uk_aq_pcon_hex RPC for read-only access (Edge function backing).
