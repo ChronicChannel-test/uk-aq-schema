@@ -346,14 +346,39 @@ create table if not exists timeseries (
   extras jsonb,
   rendering_hints jsonb,
   status_intervals jsonb,
-  created_at timestamptz default now()
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
 );
+
+alter table if exists timeseries
+  add column if not exists updated_at timestamptz default now();
+
+update timeseries
+set updated_at = coalesce(updated_at, last_value_at, created_at, now())
+where updated_at is null;
 
 create unique index if not exists timeseries_connector_ref_uidx
   on timeseries(connector_id, service_ref, timeseries_ref);
 create index if not exists timeseries_station_idx on timeseries(station_id);
 create index if not exists timeseries_phenomenon_idx on timeseries(phenomenon_id);
 create index if not exists timeseries_phenomenon_station_idx on timeseries(phenomenon_id, station_id);
+create index if not exists timeseries_updated_cursor_idx on timeseries(updated_at, id);
+
+create or replace function uk_aq_touch_timeseries_updated_at()
+returns trigger
+language plpgsql
+set search_path = uk_aq_core, public, pg_catalog
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists timeseries_touch_updated_at on timeseries;
+create trigger timeseries_touch_updated_at
+before update on timeseries
+for each row execute function uk_aq_touch_timeseries_updated_at();
 
 -- Reference values attached to a timeseries
 

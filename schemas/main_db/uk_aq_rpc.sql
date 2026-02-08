@@ -73,6 +73,19 @@ drop function if exists uk_aq_public.uk_aq_latest_rpc(
   text,
   int,
   text,
+  timestamptz,
+  timestamptz,
+  bigint
+);
+
+drop function if exists uk_aq_public.uk_aq_latest_rpc(
+  text,
+  text,
+  text,
+  bigint,
+  text,
+  int,
+  text,
   timestamptz
 );
 
@@ -84,10 +97,13 @@ create or replace function uk_aq_public.uk_aq_latest_rpc(
   pollutant text default null,
   limit_rows int default 1000,
   window_label text default null,
-  since_ts timestamptz default null
+  since_ts timestamptz default null,
+  since_updated_at timestamptz default null,
+  since_updated_id bigint default null
 )
 returns table (
   id bigint,
+  updated_at timestamptz,
   timeseries_ref text,
   label text,
   uom text,
@@ -111,6 +127,11 @@ as $$
       nullif(trim(pollutant), '') as pollutant,
       least(10000, greatest(1, coalesce(limit_rows, 1000)))::int as limit_rows,
       since_ts as since_ts,
+      coalesce(since_updated_at, since_ts) as since_updated_at,
+      case
+        when since_updated_at is null then null
+        else greatest(0, coalesce(since_updated_id, 0))
+      end as since_updated_id,
       case
         when lower(nullif(trim(window_label), '')) in ('3h','6h','1d','7d','all')
           then lower(nullif(trim(window_label), ''))
@@ -138,6 +159,7 @@ as $$
   base as (
     select
       ts.id,
+      ts.updated_at,
       ts.timeseries_ref,
       ts.label,
       ts.uom,
@@ -207,7 +229,15 @@ as $$
       and (params.connector_id is null or ts.connector_id = params.connector_id)
       and (params.region is null or s.region ilike '%' || params.region || '%')
       and (params.pcon_code is null or s.pcon_code = params.pcon_code)
-      and (params.since_ts is null or ts.last_value_at > params.since_ts)
+      and (
+        params.since_updated_at is null
+        or ts.updated_at > params.since_updated_at
+        or (
+          params.since_updated_id is not null
+          and ts.updated_at = params.since_updated_at
+          and ts.id > params.since_updated_id
+        )
+      )
       and (
         params.window_label = 'all'
         or (params.window_label = '3h' and ts.last_value_at >= now() - interval '3 hours')
@@ -230,7 +260,7 @@ as $$
     from base
     where (select station_like from params) is null
        or base.label ilike '%' || (select station_like from params) || '%'
-    order by base.last_value_at asc, base.id
+    order by base.updated_at asc, base.id
     limit (select limit_rows from params)
   ),
   station_matches as (
@@ -238,7 +268,7 @@ as $$
     from base
     where (select station_like from params) is not null
       and base.station_label ilike '%' || (select station_like from params) || '%'
-    order by base.last_value_at asc, base.id
+    order by base.updated_at asc, base.id
     limit (select limit_rows from params)
   ),
   combined as (
@@ -255,6 +285,7 @@ as $$
   )
   select
     id,
+    updated_at,
     timeseries_ref,
     label,
     uom,
@@ -265,7 +296,7 @@ as $$
     station,
     phenomenon
   from deduped
-  order by src_rank, id
+  order by src_rank, updated_at, id
   limit (select limit_rows from params);
 $$;
 
@@ -277,7 +308,9 @@ grant execute on function uk_aq_public.uk_aq_latest_rpc(
   text,
   int,
   text,
-  timestamptz
+  timestamptz,
+  timestamptz,
+  bigint
 ) to anon, authenticated;
 
 grant execute on function uk_aq_public.uk_aq_latest_rpc(
@@ -288,7 +321,9 @@ grant execute on function uk_aq_public.uk_aq_latest_rpc(
   text,
   int,
   text,
-  timestamptz
+  timestamptz,
+  timestamptz,
+  bigint
 ) to service_role;
 
 -- uk_aq_timeseries RPC for read-only access (Edge function backing).
