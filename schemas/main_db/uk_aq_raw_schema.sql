@@ -1,5 +1,6 @@
 -- uk_aq_raw schema (split from uk_air_quality_schema.sql)
 create schema if not exists uk_aq_raw;
+create schema if not exists uk_aq_public;
 set search_path = uk_aq_raw, uk_aq_core, public;
 
 create table if not exists uk_air_sos_site_register (

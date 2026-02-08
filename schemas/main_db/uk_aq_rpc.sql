@@ -1,4 +1,5 @@
 -- uk_aq_la_hex RPC for read-only access (Edge function backing).
+create schema if not exists uk_aq_public;
 
 create or replace function uk_aq_public.uk_aq_la_hex_rpc(
   region text[] default null,
