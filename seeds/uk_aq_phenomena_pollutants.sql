@@ -1,6 +1,6 @@
 -- Enrich phenomena with emissions inventory pollutant metadata.
 
-alter table if exists phenomena
+alter table if exists uk_aq_core.phenomena
   drop column if exists emission_unit,
   drop column if exists short_pollutant,
   add column if not exists pollutant_label text;
@@ -76,7 +76,7 @@ with ref(pollutant, emission_unit, short_pollutant) as (
     ('Sulphur hexafluoride', 'kt CO2 equivalent', 'SF6'),
     ('Total GHGs in CO2 Eq.', 'kilotonne', 'GHG-CO2-eq')
 )
-update phenomena
+update uk_aq_core.phenomena
 set pollutant_label = coalesce(phenomena.pollutant_label, ref.pollutant)
 from ref
 where lower(phenomena.label) = lower(ref.pollutant)
@@ -84,7 +84,7 @@ where lower(phenomena.label) = lower(ref.pollutant)
    or lower(phenomena.notation) = lower(ref.pollutant);
 
 -- Fallback: use the Eionet label without bracketed qualifiers (e.g., "(air)").
-update phenomena
+update uk_aq_core.phenomena
 set pollutant_label = nullif(
   trim(regexp_replace(label, '\s*\([^)]*\)', '', 'g')),
   ''
@@ -166,7 +166,7 @@ with ref(pollutant, emission_unit, short_pollutant) as (
     ('Total GHGs in CO2 Eq.', 'kilotonne', 'GHG-CO2-eq')
 )
 select phen.id, phen.label, phen.notation, phen.eionet_uri
-from phenomena phen
+from uk_aq_core.phenomena phen
 left join ref
   on lower(phen.label) = lower(ref.pollutant)
   or lower(phen.notation) = lower(ref.short_pollutant)
