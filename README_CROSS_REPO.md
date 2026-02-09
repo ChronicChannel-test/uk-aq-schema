@@ -1,5 +1,8 @@
 # Cross-repo map: uk-aq-schema
 
+## Main repo
+- `CIC-test-uk-aq-ingest` is the main repo for this project and the default starting point for cross-repo tasks.
+
 ## Purpose
 This repo defines the UK AQ database structure: schemas, tables, views, and security. It is the source of truth for DDL that the ingest and history repos depend on.
 
