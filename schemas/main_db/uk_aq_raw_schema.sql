@@ -86,20 +86,6 @@ create index if not exists uk_air_sos_station_refs_uk_air_id_idx
 create index if not exists uk_air_sos_station_refs_snapshot_idx
   on uk_air_sos_station_refs(source_snapshot_at);
 
-create table if not exists breathelondon_timeseries_checkpoints (
-  station_id bigint not null references stations(id) on delete cascade,
-  species text not null,
-  timeseries_id bigint references timeseries(id) on delete set null,
-  last_observed_at timestamptz,
-  last_polled_at timestamptz,
-  last_error text,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now(),
-  primary key (station_id, species)
-);
-
-create index if not exists breathelondon_timeseries_checkpoints_last_obs_idx
-  on breathelondon_timeseries_checkpoints(last_observed_at);
 
 create table if not exists breathelondon_station_checkpoints (
   station_id bigint primary key references stations(id) on delete cascade,
@@ -565,6 +551,55 @@ begin
 end;
 $$;
 
+create or replace function uk_aq_public.uk_aq_rpc_latest_ingest_runs(
+  p_connector_codes text[] default null,
+  p_since timestamptz default null
+)
+returns table (
+  connector_id bigint,
+  connector_code text,
+  run_started_at timestamptz,
+  run_ended_at timestamptz,
+  run_status text
+)
+language sql
+security definer
+set search_path = uk_aq_core, uk_aq_raw, public, pg_catalog
+as $$
+  with filtered as (
+    select
+      r.id,
+      r.connector_id,
+      r.connector_code,
+      r.run_started_at,
+      r.run_ended_at,
+      r.run_status
+    from uk_aq_core.uk_aq_ingest_runs r
+    where (
+      p_connector_codes is null
+      or array_length(p_connector_codes, 1) is null
+      or r.connector_code = any(p_connector_codes)
+    )
+      and (
+        p_since is null
+        or r.run_started_at >= p_since
+      )
+  )
+  select distinct on (f.connector_code)
+    f.connector_id,
+    f.connector_code,
+    f.run_started_at,
+    f.run_ended_at,
+    f.run_status
+  from filtered f
+  where f.connector_code is not null
+    and btrim(f.connector_code) <> ''
+  order by
+    f.connector_code,
+    f.run_started_at desc nulls last,
+    f.id desc;
+$$;
+
 create or replace function uk_aq_public.uk_aq_rpc_stations_upsert(rows jsonb)
 returns table (stations_upserted int)
 language plpgsql
@@ -947,6 +982,9 @@ grant execute on function uk_aq_public.uk_aq_rpc_openaq_select_station_refs(inte
 
 revoke all on function uk_aq_public.uk_aq_rpc_dispatch_claim(text, timestamptz, integer) from public;
 grant execute on function uk_aq_public.uk_aq_rpc_dispatch_claim(text, timestamptz, integer) to service_role;
+
+revoke all on function uk_aq_public.uk_aq_rpc_latest_ingest_runs(text[], timestamptz) from public;
+grant execute on function uk_aq_public.uk_aq_rpc_latest_ingest_runs(text[], timestamptz) to service_role;
 
 revoke all on function uk_aq_public.uk_aq_rpc_stations_upsert(jsonb) from public;
 grant execute on function uk_aq_public.uk_aq_rpc_stations_upsert(jsonb) to service_role;

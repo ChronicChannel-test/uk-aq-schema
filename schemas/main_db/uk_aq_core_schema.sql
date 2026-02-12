@@ -26,6 +26,7 @@ create table if not exists connectors (
   poll_interval_minutes int default 60,
   poll_window_hours int default 6,
   poll_timeseries_batch_size int,
+  scheduler_backend text not null default 'supabase_function',
   stations_bbox_supported boolean default true,
   timeseries_station_filter_supported boolean default true,
   last_polled_at timestamptz,
@@ -37,6 +38,24 @@ create table if not exists connectors (
 );
 
 create unique index if not exists connectors_connector_code_uidx on connectors(connector_code);
+
+alter table if exists connectors
+  add column if not exists scheduler_backend text not null default 'supabase_function';
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'connectors_scheduler_backend_check'
+      and conrelid = 'connectors'::regclass
+  ) then
+    alter table connectors
+      add constraint connectors_scheduler_backend_check
+      check (scheduler_backend in ('supabase_function', 'google_cloud_run'));
+  end if;
+end
+$$;
 
 -- Default flags for known connectors (applies on insert; update existing rows if present).
 create or replace function connectors_apply_known_defaults()

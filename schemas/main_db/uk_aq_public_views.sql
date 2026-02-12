@@ -22,7 +22,8 @@ select
   last_run_end,
   last_run_status,
   last_run_message,
-  created_at
+  created_at,
+  scheduler_backend
 from uk_aq_core.connectors;
 
 create or replace view categories as
