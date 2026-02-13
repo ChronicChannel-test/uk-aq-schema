@@ -879,12 +879,15 @@ begin
     connector_id bigint,
     timeseries_id bigint,
     observed_at timestamptz,
-    value numeric,
+    value double precision,
     status text
   )
   on conflict (connector_id, timeseries_id, observed_at) do update set
     value = excluded.value,
-    status = excluded.status;
+    status = excluded.status
+  where
+    uk_aq_core.observations.value is distinct from excluded.value
+    or uk_aq_core.observations.status is distinct from excluded.status;
   get diagnostics count_rows = row_count;
   return query select count_rows;
 end;
@@ -906,7 +909,7 @@ begin
   with updates as (
     select * from jsonb_to_recordset(rows) as r(
       id bigint,
-      last_value numeric,
+      last_value double precision,
       last_value_at timestamptz
     )
   )
@@ -914,7 +917,11 @@ begin
   set last_value = u.last_value,
       last_value_at = u.last_value_at
   from updates u
-  where t.id = u.id;
+  where t.id = u.id
+    and (
+      t.last_value is distinct from u.last_value
+      or t.last_value_at is distinct from u.last_value_at
+    );
   get diagnostics count_rows = row_count;
   return query select count_rows;
 end;

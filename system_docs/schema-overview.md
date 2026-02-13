@@ -43,7 +43,7 @@ This document summarizes the schema defined in `schemas/uk_air_quality_schema.sq
 
 ## History schema (uk_aq_history)
 - Defined in `schemas/uk_aq_history_schema.sql`.
-- `uk_aq_history.observations`: history-only fact table keyed by natural identifiers (`connector_code`, `service_ref`, `timeseries_ref`, `observed_at`) with `value`, `status`, and `moved_at`.
+- `uk_aq_history.observations`: history-only fact table keyed by internal ids (`connector_id`, `timeseries_id`, `observed_at`) with `value`, `status`, and `created_at`.
 - RLS: service_role only (intended for Edge Functions / server-side access).
 - The history schema is additive only; no existing tables are moved out of `public` yet.
 

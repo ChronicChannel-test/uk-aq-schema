@@ -1,10 +1,24 @@
 -- uk_aq_la_hex RPC for read-only access (Edge function backing).
 create schema if not exists uk_aq_public;
 
+drop function if exists uk_aq_public.uk_aq_la_hex_rpc(
+  text[],
+  text,
+  int
+);
+
+drop function if exists uk_aq_public.uk_aq_la_hex_rpc(
+  text[],
+  text,
+  int,
+  timestamptz
+);
+
 create or replace function uk_aq_public.uk_aq_la_hex_rpc(
   region text[] default null,
   la_version text default null,
-  limit_rows int default 1000
+  limit_rows int default 1000,
+  since_ts timestamptz default null
 )
 returns table (
   la_code text,
@@ -12,8 +26,8 @@ returns table (
   la_version text,
   station_count int,
   single_site boolean,
-  median_value numeric,
-  mean_value numeric,
+  median_value double precision,
+  mean_value double precision,
   latest_value_at timestamptz
 )
 language sql
@@ -24,7 +38,8 @@ as $$
     select
       region as region_codes,
       nullif(trim(la_version), '') as la_version,
-      least(10000, greatest(1, coalesce(limit_rows, 1000)))::int as limit_rows
+      least(10000, greatest(1, coalesce(limit_rows, 1000)))::int as limit_rows,
+      since_ts as since_ts
   )
   select
     l.la_code,
@@ -39,19 +54,22 @@ as $$
   cross join params
   where (params.la_version is null or l.la_version = params.la_version)
     and (params.region_codes is null or l.la_code = any(params.region_codes))
+    and (params.since_ts is null or l.latest_value_at > params.since_ts)
   limit (select limit_rows from params);
 $$;
 
 grant execute on function uk_aq_public.uk_aq_la_hex_rpc(
   text[],
   text,
-  int
+  int,
+  timestamptz
 ) to anon, authenticated;
 
 grant execute on function uk_aq_public.uk_aq_la_hex_rpc(
   text[],
   text,
-  int
+  int,
+  timestamptz
 ) to service_role;
 -- uk_aq_latest RPC for read-only access (Edge function backing).
 
@@ -107,7 +125,7 @@ returns table (
   timeseries_ref text,
   label text,
   uom text,
-  last_value numeric,
+  last_value double precision,
   last_value_at timestamptz,
   connector_id bigint,
   connector jsonb,
@@ -341,11 +359,20 @@ drop function if exists uk_aq_public.uk_aq_timeseries_rpc(
   timestamptz
 );
 
+drop function if exists uk_aq_public.uk_aq_timeseries_rpc(
+  bigint,
+  text,
+  int,
+  timestamptz,
+  boolean
+);
+
 create or replace function uk_aq_public.uk_aq_timeseries_rpc(
   timeseries_id bigint,
   window_label text default '24h',
   limit_rows int default null,
-  since_ts timestamptz default null
+  since_ts timestamptz default null,
+  include_status boolean default true
 )
 returns table (
   timeseries_id bigint,
@@ -372,7 +399,8 @@ as $$
         when limit_rows is null then null
         else greatest(1, limit_rows)::int
       end as limit_rows,
-      since_ts as since_ts
+      since_ts as since_ts,
+      coalesce(include_status, true) as include_status
   ),
   windowed as (
     select
@@ -387,7 +415,8 @@ as $$
         else now() - interval '24 hours'
       end as start_ts,
       limit_rows,
-      since_ts
+      since_ts,
+      include_status
     from params
   ),
   phen as (
@@ -462,11 +491,18 @@ as $$
     (select guideline from guideline) as guideline,
     coalesce(
       (select jsonb_agg(
-        jsonb_build_object(
-          'observed_at', observed_at,
-          'value', value,
-          'status', status
-        )
+        case
+          when (select include_status from windowed limit 1)
+            then jsonb_build_object(
+              'observed_at', observed_at,
+              'value', value,
+              'status', status
+            )
+          else jsonb_build_object(
+            'observed_at', observed_at,
+            'value', value
+          )
+        end
         order by observed_at
       ) from obs),
       '[]'::jsonb
@@ -478,21 +514,35 @@ grant execute on function uk_aq_public.uk_aq_timeseries_rpc(
   bigint,
   text,
   int,
-  timestamptz
+  timestamptz,
+  boolean
 ) to anon, authenticated;
 
 grant execute on function uk_aq_public.uk_aq_timeseries_rpc(
   bigint,
   text,
   int,
-  timestamptz
+  timestamptz,
+  boolean
 ) to service_role;
 
 -- uk_aq_pcon_hex RPC for read-only access (Edge function backing).
 
+drop function if exists uk_aq_public.uk_aq_pcon_hex_rpc(
+  text,
+  int
+);
+
+drop function if exists uk_aq_public.uk_aq_pcon_hex_rpc(
+  text,
+  int,
+  timestamptz
+);
+
 create or replace function uk_aq_public.uk_aq_pcon_hex_rpc(
   pcon_version text default null,
-  limit_rows int default 1000
+  limit_rows int default 1000,
+  since_ts timestamptz default null
 )
 returns table (
   pcon_code text,
@@ -500,8 +550,8 @@ returns table (
   pcon_version text,
   station_count int,
   single_site boolean,
-  median_value numeric,
-  mean_value numeric,
+  median_value double precision,
+  mean_value double precision,
   latest_value_at timestamptz
 )
 language sql
@@ -511,7 +561,8 @@ as $$
   with params as (
     select
       nullif(trim(pcon_version), '') as pcon_version,
-      least(10000, greatest(1, coalesce(limit_rows, 1000)))::int as limit_rows
+      least(10000, greatest(1, coalesce(limit_rows, 1000)))::int as limit_rows,
+      since_ts as since_ts
   )
   select
     p.pcon_code,
@@ -525,17 +576,20 @@ as $$
   from uk_aq_core.pcon_latest_pm25 p
   cross join params
   where params.pcon_version is null or p.pcon_version = params.pcon_version
+    and (params.since_ts is null or p.latest_value_at > params.since_ts)
   limit (select limit_rows from params);
 $$;
 
 grant execute on function uk_aq_public.uk_aq_pcon_hex_rpc(
   text,
-  int
+  int,
+  timestamptz
 ) to anon, authenticated;
 
 grant execute on function uk_aq_public.uk_aq_pcon_hex_rpc(
   text,
-  int
+  int,
+  timestamptz
 ) to service_role;
 
 -- uk_aq_stations RPC for read-only access (Edge function backing).
@@ -628,7 +682,7 @@ returns table (
   timeseries_ref text,
   label text,
   uom text,
-  last_value numeric,
+  last_value double precision,
   last_value_at timestamptz,
   connector_id bigint,
   connector jsonb,

@@ -5,18 +5,19 @@ create schema if not exists uk_aq_history;
 create schema if not exists uk_aq_public;
 
 create table if not exists uk_aq_history.observations (
-  connector_code text not null,
-  service_ref text not null,
-  timeseries_ref text not null,
+  connector_id bigint not null,
+  timeseries_id bigint not null,
   observed_at timestamptz not null,
   value double precision,
   status text,
-  moved_at timestamptz default now(),
-  primary key (connector_code, service_ref, timeseries_ref, observed_at)
+  created_at timestamptz not null default now(),
+  primary key (connector_id, timeseries_id, observed_at)
 );
 
-create index if not exists uk_aq_history_observations_series_observed_idx
-  on uk_aq_history.observations (connector_code, service_ref, timeseries_ref, observed_at);
+drop index if exists uk_aq_history.uk_aq_history_observations_series_observed_idx;
+
+create index if not exists uk_aq_history_observations_observed_at_brin
+  on uk_aq_history.observations using brin (observed_at);
 
 create or replace function uk_aq_public.uk_aq_rpc_history_observations_upsert(rows jsonb)
 returns table(observations_upserted int)
@@ -40,37 +41,35 @@ begin
   end if;
 
   insert into uk_aq_history.observations (
-    connector_code,
-    service_ref,
-    timeseries_ref,
+    connector_id,
+    timeseries_id,
     observed_at,
     value,
     status
   )
   select
-    input.connector_code,
-    input.service_ref,
-    input.timeseries_ref,
+    input.connector_id,
+    input.timeseries_id,
     input.observed_at,
     input.value,
     input.status
   from jsonb_to_recordset(rows) as input(
-    connector_code text,
-    service_ref text,
-    timeseries_ref text,
+    connector_id bigint,
+    timeseries_id bigint,
     observed_at timestamptz,
     value double precision,
     status text
   )
-  where input.connector_code is not null
-    and input.service_ref is not null
-    and input.timeseries_ref is not null
+  where input.connector_id is not null
+    and input.timeseries_id is not null
     and input.observed_at is not null
-  on conflict (connector_code, service_ref, timeseries_ref, observed_at)
+  on conflict (connector_id, timeseries_id, observed_at)
   do update set
     value = excluded.value,
-    status = excluded.status,
-    moved_at = now();
+    status = excluded.status
+  where
+    uk_aq_history.observations.value is distinct from excluded.value
+    or uk_aq_history.observations.status is distinct from excluded.status;
 
   get diagnostics v_count = row_count;
   return query select coalesce(v_count, 0);

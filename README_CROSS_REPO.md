@@ -59,3 +59,6 @@ Files changed (paths)
 Implementation details (short, specific)
 Supabase steps (instructions only,)
 Verification checklist (clear pass/fail)
+
+Planning requirement:
+- In planning work, always include egress and database-size analysis. Spell out egress/DB-size tradeoffs in each option's pros/cons, and tie the recommendation to those tradeoffs.

@@ -361,7 +361,7 @@ create table if not exists timeseries (
   category_id bigint references categories(id),
   first_value_at timestamptz,
   last_value_at timestamptz,
-  last_value numeric,
+  last_value double precision,
   extras jsonb,
   rendering_hints jsonb,
   status_intervals jsonb,
@@ -416,7 +416,7 @@ create table if not exists observations (
   connector_id bigint not null references connectors(id) on delete cascade,
   timeseries_id bigint references timeseries(id) on delete cascade,
   observed_at timestamptz not null,
-  value numeric,
+  value double precision,
   status text,
   created_at timestamptz default now(),
   primary key (connector_id, timeseries_id, observed_at)

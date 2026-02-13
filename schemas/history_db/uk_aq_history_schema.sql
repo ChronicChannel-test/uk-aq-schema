@@ -4,14 +4,13 @@
 create schema if not exists uk_aq_history;
 
 create table if not exists uk_aq_history.observations (
-  connector_code text not null,
-  service_ref text not null,
-  timeseries_ref text not null,
+  connector_id bigint not null,
+  timeseries_id bigint not null,
   observed_at timestamptz not null,
   value double precision,
   status text,
-  moved_at timestamptz default now(),
-  primary key (connector_code, service_ref, timeseries_ref, observed_at)
+  created_at timestamptz not null default now(),
+  primary key (connector_id, timeseries_id, observed_at)
 );
 
 create index if not exists uk_aq_history_observations_observed_at_brin

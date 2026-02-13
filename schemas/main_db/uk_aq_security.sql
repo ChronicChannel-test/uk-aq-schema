@@ -33,7 +33,7 @@ declare
   t text;
 begin
   for t in
-    select unnest(ARRAY['uk_air_sos_site_register','laqn_site_register','uk_air_sos_station_refs','breathelondon_timeseries_checkpoints','erg_laqn_station_checkpoints','uk_air_sos_timeseries_checkpoints','openaq_station_checkpoints','openaq_timeseries_checkpoints','error_logs']::text[])
+    select unnest(ARRAY['uk_air_sos_site_register','laqn_site_register','uk_air_sos_station_refs','breathelondon_station_checkpoints','erg_laqn_station_checkpoints','uk_air_sos_timeseries_checkpoints','openaq_station_checkpoints','openaq_timeseries_checkpoints','error_logs']::text[])
   loop
     execute format('alter table uk_aq_raw.%I enable row level security', t);
     if not exists (
