@@ -121,6 +121,22 @@ create table if not exists uk_air_sos_timeseries_checkpoints (
 create index if not exists uk_air_sos_timeseries_checkpoints_last_polled_at_idx
   on uk_air_sos_timeseries_checkpoints(last_polled_at);
 
+create table if not exists uk_air_sos_station_checkpoints (
+  station_id bigint primary key references stations(id) on delete cascade,
+  next_due_at timestamptz,
+  last_observed_at timestamptz,
+  ingest_lag_samples int[] not null default '{}'::int[],
+  last_polled_at timestamptz,
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists uk_air_sos_station_checkpoints_next_due_idx
+  on uk_air_sos_station_checkpoints(next_due_at);
+create index if not exists uk_air_sos_station_checkpoints_last_polled_idx
+  on uk_air_sos_station_checkpoints(last_polled_at);
+create index if not exists uk_air_sos_station_checkpoints_last_observed_idx
+  on uk_air_sos_station_checkpoints(last_observed_at);
+
 create table if not exists openaq_station_checkpoints (
   station_id bigint primary key references stations(id) on delete cascade,
   next_due_at timestamptz,
