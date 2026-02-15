@@ -172,6 +172,33 @@ create index if not exists openaq_timeseries_checkpoints_last_polled_at_idx
 create index if not exists openaq_timeseries_checkpoints_timeseries_id_idx
   on openaq_timeseries_checkpoints(timeseries_id);
 
+create table if not exists observation_rpc_metrics_minute (
+  bucket_minute timestamptz not null,
+  endpoint text not null,
+  calls bigint not null default 0,
+  rows_input bigint not null default 0,
+  payload_bytes bigint not null default 0,
+  rows_upserted bigint not null default 0,
+  duration_ms_sum bigint not null default 0,
+  duration_ms_max int not null default 0,
+  primary key (bucket_minute, endpoint)
+);
+
+create index if not exists observation_rpc_metrics_minute_endpoint_idx
+  on observation_rpc_metrics_minute (endpoint, bucket_minute desc);
+
+create or replace view uk_aq_public.uk_aq_observation_rpc_metrics_minute as
+select
+  bucket_minute,
+  endpoint,
+  calls,
+  rows_input,
+  payload_bytes,
+  rows_upserted,
+  duration_ms_sum,
+  duration_ms_max
+from uk_aq_raw.observation_rpc_metrics_minute;
+
 create unique index if not exists stations_connector_ref_uidx
   on stations(connector_id, service_ref, station_ref);
 create index if not exists stations_geom_idx on stations using gist (geometry);
@@ -873,11 +900,19 @@ set search_path = uk_aq_core, uk_aq_raw, public, pg_catalog
 as $$
 declare
   count_rows int := 0;
+  v_started_at timestamptz := clock_timestamp();
+  v_input_rows int := 0;
+  v_payload_bytes int := 0;
+  v_duration_ms int := 0;
 begin
   if rows is null or jsonb_typeof(rows) <> 'array' or jsonb_array_length(rows) = 0 then
     return query select 0;
     return;
   end if;
+
+  v_input_rows := jsonb_array_length(rows);
+  v_payload_bytes := pg_column_size(rows);
+
   insert into uk_aq_core.observations (
     connector_id,
     timeseries_id,
@@ -905,6 +940,44 @@ begin
     uk_aq_core.observations.value is distinct from excluded.value
     or uk_aq_core.observations.status is distinct from excluded.status;
   get diagnostics count_rows = row_count;
+
+  v_duration_ms := greatest(
+    0,
+    floor(extract(epoch from (clock_timestamp() - v_started_at)) * 1000)::int
+  );
+
+  insert into uk_aq_raw.observation_rpc_metrics_minute (
+    bucket_minute,
+    endpoint,
+    calls,
+    rows_input,
+    payload_bytes,
+    rows_upserted,
+    duration_ms_sum,
+    duration_ms_max
+  )
+  values (
+    date_trunc('minute', now()),
+    'rpc/uk_aq_rpc_observations_upsert',
+    1,
+    v_input_rows,
+    v_payload_bytes,
+    coalesce(count_rows, 0),
+    v_duration_ms,
+    v_duration_ms
+  )
+  on conflict (bucket_minute, endpoint)
+  do update set
+    calls = uk_aq_raw.observation_rpc_metrics_minute.calls + 1,
+    rows_input = uk_aq_raw.observation_rpc_metrics_minute.rows_input + excluded.rows_input,
+    payload_bytes = uk_aq_raw.observation_rpc_metrics_minute.payload_bytes + excluded.payload_bytes,
+    rows_upserted = uk_aq_raw.observation_rpc_metrics_minute.rows_upserted + excluded.rows_upserted,
+    duration_ms_sum = uk_aq_raw.observation_rpc_metrics_minute.duration_ms_sum + excluded.duration_ms_sum,
+    duration_ms_max = greatest(
+      uk_aq_raw.observation_rpc_metrics_minute.duration_ms_max,
+      excluded.duration_ms_max
+    );
+
   return query select count_rows;
 end;
 $$;
@@ -1046,3 +1119,7 @@ grant execute on function uk_aq_public.uk_aq_rpc_timeseries_last_values_update(j
 
 revoke all on function uk_aq_public.uk_aq_rpc_error_log_insert(jsonb) from public;
 grant execute on function uk_aq_public.uk_aq_rpc_error_log_insert(jsonb) to service_role;
+
+revoke all on uk_aq_public.uk_aq_observation_rpc_metrics_minute from public;
+grant select on uk_aq_public.uk_aq_observation_rpc_metrics_minute to authenticated;
+grant select on uk_aq_public.uk_aq_observation_rpc_metrics_minute to service_role;

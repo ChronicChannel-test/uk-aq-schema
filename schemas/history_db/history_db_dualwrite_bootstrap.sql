@@ -47,6 +47,18 @@ select
   duration_ms_max
 from uk_aq_raw.history_rpc_metrics_minute;
 
+create or replace view uk_aq_public.uk_aq_observation_rpc_metrics_minute as
+select
+  bucket_minute,
+  endpoint,
+  calls,
+  rows_input,
+  payload_bytes,
+  rows_upserted,
+  duration_ms_sum,
+  duration_ms_max
+from uk_aq_raw.history_rpc_metrics_minute;
+
 create or replace function uk_aq_public.uk_aq_rpc_history_observations_upsert(rows jsonb)
 returns table(observations_upserted int)
 language plpgsql
@@ -154,3 +166,4 @@ grant usage on schema uk_aq_public to service_role;
 grant usage on schema uk_aq_raw to service_role;
 grant all on table uk_aq_history.observations to service_role;
 grant select on uk_aq_public.uk_aq_history_rpc_metrics_minute to service_role;
+grant select on uk_aq_public.uk_aq_observation_rpc_metrics_minute to service_role;
