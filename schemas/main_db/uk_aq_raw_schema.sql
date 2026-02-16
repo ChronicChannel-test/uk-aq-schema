@@ -439,9 +439,12 @@ begin
 end;
 $$;
 
+drop function if exists uk_aq_public.uk_aq_rpc_openaq_select_station_refs(integer, integer);
+
 create or replace function uk_aq_public.uk_aq_rpc_openaq_select_station_refs(
   batch_limit integer default 50,
-  stale_limit integer default 10
+  stale_limit integer default 10,
+  tier1_retry_seconds integer default 300
 )
 returns table (
   station_ref text,
@@ -500,7 +503,10 @@ begin
     from candidates c
     where c.due_at <= now()
       and c.due_at >= now() - interval '3 hours'
-      and (c.last_polled_at is null or c.last_polled_at <= now() - interval '5 minutes')
+      and (
+        c.last_polled_at is null or
+        c.last_polled_at <= now() - make_interval(secs => greatest(0, tier1_retry_seconds))
+      )
     union all
     select
       c.station_id,
@@ -1073,8 +1079,8 @@ grant execute on function uk_aq_public.uk_aq_rpc_openaq_timeseries_checkpoints_s
 revoke all on function uk_aq_public.uk_aq_rpc_openaq_timeseries_checkpoints_upsert(jsonb) from public;
 grant execute on function uk_aq_public.uk_aq_rpc_openaq_timeseries_checkpoints_upsert(jsonb) to service_role;
 
-revoke all on function uk_aq_public.uk_aq_rpc_openaq_select_station_refs(integer, integer) from public;
-grant execute on function uk_aq_public.uk_aq_rpc_openaq_select_station_refs(integer, integer) to service_role;
+revoke all on function uk_aq_public.uk_aq_rpc_openaq_select_station_refs(integer, integer, integer) from public;
+grant execute on function uk_aq_public.uk_aq_rpc_openaq_select_station_refs(integer, integer, integer) to service_role;
 
 revoke all on function uk_aq_public.uk_aq_rpc_dispatch_claim(text, timestamptz, integer) from public;
 grant execute on function uk_aq_public.uk_aq_rpc_dispatch_claim(text, timestamptz, integer) to service_role;
