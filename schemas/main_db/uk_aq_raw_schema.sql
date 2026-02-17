@@ -502,7 +502,7 @@ begin
       c.last_polled_at
     from candidates c
     where c.due_at <= now()
-      and c.due_at >= now() - interval '3 hours'
+      and c.due_at >= now() - interval '6 hours'
       and (
         c.last_polled_at is null or
         c.last_polled_at <= now() - make_interval(secs => greatest(0, tier1_retry_seconds))
@@ -514,7 +514,7 @@ begin
       c.due_at,
       c.last_polled_at
     from candidates c
-    where c.due_at < now() - interval '3 hours'
+    where c.due_at < now() - interval '6 hours'
       and c.due_at >= now() - interval '24 hours'
       and (c.last_polled_at is null or c.last_polled_at <= now() - interval '1 hour')
   ),
