@@ -198,6 +198,7 @@ select
   duration_ms_sum,
   duration_ms_max
 from uk_aq_raw.observation_rpc_metrics_minute;
+alter view if exists uk_aq_public.uk_aq_observation_rpc_metrics_minute set (security_invoker = true);
 
 create unique index if not exists stations_connector_ref_uidx
   on stations(connector_id, service_ref, station_ref);

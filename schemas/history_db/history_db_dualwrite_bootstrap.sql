@@ -46,6 +46,7 @@ select
   duration_ms_sum,
   duration_ms_max
 from uk_aq_raw.history_rpc_metrics_minute;
+alter view if exists uk_aq_public.uk_aq_history_rpc_metrics_minute set (security_invoker = true);
 
 create or replace view uk_aq_public.uk_aq_observation_rpc_metrics_minute as
 select
@@ -58,6 +59,7 @@ select
   duration_ms_sum,
   duration_ms_max
 from uk_aq_raw.history_rpc_metrics_minute;
+alter view if exists uk_aq_public.uk_aq_observation_rpc_metrics_minute set (security_invoker = true);
 
 create or replace function uk_aq_public.uk_aq_rpc_history_observations_upsert(rows jsonb)
 returns table(observations_upserted int)

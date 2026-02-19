@@ -98,6 +98,40 @@ alter default privileges in schema uk_aq_pop
 -- usage to write/read geography columns via PostgREST.
 grant usage on schema public to service_role;
 
+-- PostGIS system table: enable RLS when ownership/privileges allow it.
+do $$
+declare
+  owner_name text;
+begin
+  select r.rolname into owner_name
+  from pg_class c
+  join pg_roles r on r.oid = c.relowner
+  where c.relname = 'spatial_ref_sys'
+    and c.relnamespace = 'public'::regnamespace;
+
+  if owner_name is null then
+    raise notice 'spatial_ref_sys not found; skipping RLS setup.';
+    return;
+  end if;
+
+  if owner_name = current_user then
+    execute 'alter table public.spatial_ref_sys enable row level security';
+    if not exists (
+      select 1 from pg_policies p
+      where p.schemaname = 'public'
+        and p.tablename = 'spatial_ref_sys'
+        and p.policyname = 'spatial_ref_sys_select_all'
+    ) then
+      execute
+        'create policy spatial_ref_sys_select_all on public.spatial_ref_sys for select using (auth.role() in (''anon'',''authenticated'',''service_role''));';
+    end if;
+  else
+    raise notice 'Skipping RLS on public.spatial_ref_sys; owner is %, current_user is %', owner_name, current_user;
+  end if;
+exception when insufficient_privilege then
+  raise notice 'Skipping RLS on public.spatial_ref_sys due to insufficient privileges.';
+end $$;
+
 -- View grants (core PM2.5 rollups).
 alter view if exists uk_aq_core.la_latest_pm25 set (security_invoker = true);
 alter view if exists uk_aq_core.pcon_latest_pm25 set (security_invoker = true);
