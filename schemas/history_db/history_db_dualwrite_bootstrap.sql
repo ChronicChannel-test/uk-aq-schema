@@ -100,13 +100,18 @@ begin
     input.connector_id,
     input.timeseries_id,
     input.observed_at,
-    input.value,
+    case
+      when input.value_float8_hex ~ '^[0-9A-Fa-f]{16}$'
+        then float8recv(decode(lower(input.value_float8_hex), 'hex'))
+      else input.value
+    end as value,
     input.status
   from jsonb_to_recordset(rows) as input(
     connector_id bigint,
     timeseries_id bigint,
     observed_at timestamptz,
     value double precision,
+    value_float8_hex text,
     status text
   )
   where input.connector_id is not null
