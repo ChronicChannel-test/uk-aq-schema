@@ -215,15 +215,9 @@ as $$
         else jsonb_build_object(
           'id', p.id,
           'label', p.label,
-          'source_label', p.source_label,
           'notation', p.notation,
-          'eionet_uri', p.source_label,
-          'pollutant_label', p.pollutant_label,
-          'observed_property_id', op.id,
-          'observed_property_code', op.code,
-          'observed_property_display_name', op.display_name,
-          'observed_property_domain', op.domain,
-          'canonical_uom', op.canonical_uom
+          'eionet_uri', p.eionet_uri,
+          'pollutant_label', p.pollutant_label
         )
       end as phenomenon,
       s.label as station_label
@@ -231,7 +225,6 @@ as $$
     left join uk_aq_core.connectors c on c.id = ts.connector_id
     left join uk_aq_core.stations s on s.id = ts.station_id
     left join uk_aq_core.phenomena p on p.id = ts.phenomenon_id
-    left join uk_aq_core.observed_properties op on op.id = p.observed_property_id
     left join lateral (
       select coalesce(
         jsonb_agg(
@@ -275,12 +268,8 @@ as $$
         or exists (
           select 1
           from unnest(pt.tokens) token
-          where op.code = uk_aq_core.uk_aq_observed_property_code(null, token, token, token)
-             or lower(coalesce(op.display_name, '')) = token
-             or lower(coalesce(p.notation, '')) = token
-             or lower(coalesce(p.pollutant_label, '')) = token
-             or lower(coalesce(p.label, '')) = token
-             or lower(coalesce(p.source_label, '')) = token
+          where p.notation ilike token
+             or p.pollutant_label ilike token
         )
       )
   ),
@@ -432,53 +421,35 @@ as $$
   ),
   phen as (
     select
-      op.code as observed_property_code,
-      op.display_name as observed_property_display_name,
       p.pollutant_label,
       p.notation,
       p.label
     from uk_aq_core.timeseries ts
     left join uk_aq_core.phenomena p on p.id = ts.phenomenon_id
-    left join uk_aq_core.observed_properties op on op.id = p.observed_property_id
     join windowed w on w.timeseries_id = ts.id
     limit 1
   ),
   pollutant as (
     select
       case
-        when observed_property_code = 'pm25'
+        when lower(coalesce(pollutant_label, notation, label, '')) like '%pm2.5%'
+          or lower(coalesce(pollutant_label, notation, label, '')) like '%pm2_5%'
+          or lower(coalesce(pollutant_label, notation, label, '')) like '%pm25%'
           then 'PM2.5'
-        when observed_property_code = 'pm10'
+        when lower(coalesce(pollutant_label, notation, label, '')) like '%pm10%'
           then 'PM10'
-        when observed_property_code = 'no2'
+        when lower(coalesce(pollutant_label, notation, label, '')) like '%no2%'
+          or lower(coalesce(pollutant_label, notation, label, '')) like '%nitrogen dioxide%'
           then 'NO2'
-        when observed_property_code = 'o3'
+        when lower(coalesce(pollutant_label, notation, label, '')) like '%o3%'
+          or lower(coalesce(pollutant_label, notation, label, '')) like '%ozone%'
           then 'O3'
-        when observed_property_code = 'so2'
-          then 'SO2'
-        when lower(coalesce(observed_property_display_name, pollutant_label, notation, label, '')) like '%pm2.5%'
-          or lower(coalesce(observed_property_display_name, pollutant_label, notation, label, '')) like '%pm2_5%'
-          or lower(coalesce(observed_property_display_name, pollutant_label, notation, label, '')) like '%pm25%'
-          then 'PM2.5'
-        when lower(coalesce(observed_property_display_name, pollutant_label, notation, label, '')) like '%pm10%'
-          then 'PM10'
-        when lower(coalesce(observed_property_display_name, pollutant_label, notation, label, '')) like '%no2%'
-          or lower(coalesce(observed_property_display_name, pollutant_label, notation, label, '')) like '%nitrogen dioxide%'
-          then 'NO2'
-        when lower(coalesce(observed_property_display_name, pollutant_label, notation, label, '')) like '%o3%'
-          or lower(coalesce(observed_property_display_name, pollutant_label, notation, label, '')) like '%ozone%'
-          then 'O3'
-        when lower(coalesce(observed_property_display_name, pollutant_label, notation, label, '')) like '%so2%'
-          or lower(coalesce(observed_property_display_name, pollutant_label, notation, label, '')) like '%sulphur dioxide%'
-          or lower(coalesce(observed_property_display_name, pollutant_label, notation, label, '')) like '%sulfur dioxide%'
+        when lower(coalesce(pollutant_label, notation, label, '')) like '%so2%'
+          or lower(coalesce(pollutant_label, notation, label, '')) like '%sulphur dioxide%'
+          or lower(coalesce(pollutant_label, notation, label, '')) like '%sulfur dioxide%'
           then 'SO2'
         else nullif(
-          upper(regexp_replace(
-            coalesce(observed_property_display_name, pollutant_label, notation, label, ''),
-            '\s+',
-            '',
-            'g'
-          )),
+          upper(regexp_replace(coalesce(pollutant_label, notation, label, ''), '\s+', '', 'g')),
           ''
         )
       end as pollutant_key
@@ -783,15 +754,9 @@ as $$
         else jsonb_build_object(
           'id', p.id,
           'label', p.label,
-          'source_label', p.source_label,
           'notation', p.notation,
-          'eionet_uri', p.source_label,
-          'pollutant_label', p.pollutant_label,
-          'observed_property_id', op.id,
-          'observed_property_code', op.code,
-          'observed_property_display_name', op.display_name,
-          'observed_property_domain', op.domain,
-          'canonical_uom', op.canonical_uom
+          'eionet_uri', p.eionet_uri,
+          'pollutant_label', p.pollutant_label
         )
       end as phenomenon,
       s.label as station_label
@@ -799,7 +764,6 @@ as $$
     left join uk_aq_core.connectors c on c.id = ts.connector_id
     left join uk_aq_core.stations s on s.id = ts.station_id
     left join uk_aq_core.phenomena p on p.id = ts.phenomenon_id
-    left join uk_aq_core.observed_properties op on op.id = p.observed_property_id
     cross join params
     cross join pollutant_tokens pt
     where ts.last_value >= 0
@@ -811,12 +775,8 @@ as $$
         or exists (
           select 1
           from unnest(pt.tokens) token
-          where op.code = uk_aq_core.uk_aq_observed_property_code(null, token, token, token)
-             or lower(coalesce(op.display_name, '')) = token
-             or lower(coalesce(p.notation, '')) = token
-             or lower(coalesce(p.pollutant_label, '')) = token
-             or lower(coalesce(p.label, '')) = token
-             or lower(coalesce(p.source_label, '')) = token
+          where p.notation ilike token
+             or p.pollutant_label ilike token
         )
       )
   ),

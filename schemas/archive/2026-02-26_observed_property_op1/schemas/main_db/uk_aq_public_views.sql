@@ -31,27 +31,8 @@ select id, category_ref, label, connector_id
 from uk_aq_core.categories;
 
 create or replace view phenomena as
-select
-  id,
-  label,
-  source_label as eionet_uri,
-  notation,
-  pollutant_label,
-  connector_id,
-  observed_property_id,
-  source_label
+select id, label, eionet_uri, notation, pollutant_label, connector_id
 from uk_aq_core.phenomena;
-
-create or replace view observed_properties as
-select
-  id,
-  code,
-  display_name,
-  domain,
-  canonical_uom,
-  created_at,
-  updated_at
-from uk_aq_core.observed_properties;
 
 create or replace view offerings as
 select id, offering_ref, label, service_ref, connector_id
@@ -221,19 +202,8 @@ join bristol_stations stn
   on ts.station_id = stn.id
 left join latest on latest.timeseries_id = ts.id
 left join uk_aq_core.phenomena phen on phen.id = ts.phenomenon_id
-left join uk_aq_core.observed_properties op on op.id = phen.observed_property_id
 left join uk_aq_core.pollutant_thresholds th
-  on lower(
-    coalesce(
-      case
-        when op.code = 'pm25' then 'pm2.5'
-        else op.code
-      end,
-      phen.pollutant_label,
-      phen.notation,
-      phen.label
-    )
-  ) = th.pollutant
+  on lower(phen.label) = th.pollutant
   and (
     (th.upper_value is null and latest.value is not null and latest.value >= th.lower_value) or
     (latest.value between th.lower_value and th.upper_value)
@@ -259,7 +229,6 @@ where st.geometry is not null;
 alter view if exists connectors set (security_invoker = true);
 alter view if exists categories set (security_invoker = true);
 alter view if exists phenomena set (security_invoker = true);
-alter view if exists observed_properties set (security_invoker = true);
 alter view if exists offerings set (security_invoker = true);
 alter view if exists features set (security_invoker = true);
 alter view if exists procedures set (security_invoker = true);

@@ -762,145 +762,30 @@ begin
     return query select 0;
     return;
   end if;
-
-  with parsed as (
-    select
-      nullif(item->>'connector_id', '')::bigint as connector_id,
-      nullif(trim(coalesce(item->>'source_label', item->>'eionet_uri')), '') as source_label,
-      nullif(trim(item->>'label'), '') as label,
-      nullif(trim(item->>'notation'), '') as notation,
-      nullif(trim(item->>'pollutant_label'), '') as pollutant_label,
-      nullif(trim(item->>'observed_property_code'), '') as observed_property_code,
-      nullif(trim(item->>'observed_property_display_name'), '') as observed_property_display_name,
-      nullif(trim(item->>'observed_property_domain'), '') as observed_property_domain,
-      nullif(trim(coalesce(item->>'canonical_uom', item->>'observed_property_canonical_uom')), '') as canonical_uom
-    from jsonb_array_elements(rows) item
-  ),
-  normalized as (
-    select
-      p.connector_id,
-      p.source_label,
-      coalesce(
-        p.label,
-        p.notation,
-        p.pollutant_label,
-        p.source_label,
-        'unknown'
-      ) as label,
-      p.notation,
-      p.pollutant_label,
-      coalesce(
-        nullif(lower(regexp_replace(p.observed_property_code, '[^a-z0-9]+', '', 'g')), ''),
-        uk_aq_core.uk_aq_observed_property_code(
-          p.source_label,
-          p.notation,
-          p.pollutant_label,
-          p.label
-        )
-      ) as observed_property_code,
-      p.observed_property_display_name,
-      p.observed_property_domain,
-      p.canonical_uom
-    from parsed p
-    where p.connector_id is not null
-  )
-  insert into uk_aq_core.observed_properties (
-    code,
-    display_name,
-    domain,
-    canonical_uom
-  )
-  select
-    per_code.code,
-    per_code.display_name,
-    per_code.domain,
-    per_code.canonical_uom
-  from (
-    select
-      n.observed_property_code as code,
-      coalesce(
-        max(n.observed_property_display_name),
-        max(n.notation),
-        max(n.pollutant_label),
-        max(n.label),
-        initcap(replace(n.observed_property_code, '_', ' '))
-      ) as display_name,
-      coalesce(
-        max(n.observed_property_domain),
-        uk_aq_core.uk_aq_observed_property_domain(n.observed_property_code)
-      ) as domain,
-      coalesce(
-        max(n.canonical_uom),
-        uk_aq_core.uk_aq_observed_property_default_uom(n.observed_property_code)
-      ) as canonical_uom
-    from normalized n
-    where n.observed_property_code is not null
-    group by n.observed_property_code
-  ) per_code
-  on conflict (code) do update
-  set
-    domain = excluded.domain,
-    canonical_uom = coalesce(uk_aq_core.observed_properties.canonical_uom, excluded.canonical_uom),
-    updated_at = now();
-
-  with parsed as (
-    select
-      nullif(item->>'connector_id', '')::bigint as connector_id,
-      nullif(trim(coalesce(item->>'source_label', item->>'eionet_uri')), '') as source_label,
-      nullif(trim(item->>'label'), '') as label,
-      nullif(trim(item->>'notation'), '') as notation,
-      nullif(trim(item->>'pollutant_label'), '') as pollutant_label,
-      nullif(trim(item->>'observed_property_code'), '') as observed_property_code
-    from jsonb_array_elements(rows) item
-  ),
-  normalized as (
-    select
-      p.connector_id,
-      p.source_label,
-      coalesce(
-        p.label,
-        p.notation,
-        p.pollutant_label,
-        p.source_label,
-        'unknown'
-      ) as label,
-      p.notation,
-      p.pollutant_label,
-      coalesce(
-        nullif(lower(regexp_replace(p.observed_property_code, '[^a-z0-9]+', '', 'g')), ''),
-        uk_aq_core.uk_aq_observed_property_code(
-          p.source_label,
-          p.notation,
-          p.pollutant_label,
-          p.label
-        )
-      ) as observed_property_code
-    from parsed p
-    where p.connector_id is not null
-  )
   insert into uk_aq_core.phenomena (
     connector_id,
-    source_label,
+    eionet_uri,
     label,
     notation,
-    pollutant_label,
-    observed_property_id
+    pollutant_label
   )
   select
-    n.connector_id,
-    n.source_label,
-    n.label,
-    n.notation,
-    n.pollutant_label,
-    op.id as observed_property_id
-  from normalized n
-  left join uk_aq_core.observed_properties op
-    on op.code = n.observed_property_code
-  on conflict (connector_id, source_label) do update set
+    r.connector_id,
+    r.eionet_uri,
+    r.label,
+    r.notation,
+    r.pollutant_label
+  from jsonb_to_recordset(rows) as r(
+    connector_id bigint,
+    eionet_uri text,
+    label text,
+    notation text,
+    pollutant_label text
+  )
+  on conflict (connector_id, eionet_uri) do update set
     label = excluded.label,
     notation = excluded.notation,
-    pollutant_label = excluded.pollutant_label,
-    observed_property_id = coalesce(excluded.observed_property_id, uk_aq_core.phenomena.observed_property_id);
+    pollutant_label = excluded.pollutant_label;
   get diagnostics count_rows = row_count;
   return query select count_rows;
 end;
@@ -918,10 +803,10 @@ language sql
 security definer
 set search_path = uk_aq_core, uk_aq_raw, public, pg_catalog
 as $$
-  select p.source_label as eionet_uri, p.id
+  select p.eionet_uri, p.id
   from uk_aq_core.phenomena p
   where p.connector_id = $1
-    and p.source_label = any($2);
+    and p.eionet_uri = any($2);
 $$;
 
 create or replace function uk_aq_public.uk_aq_rpc_timeseries_upsert(rows jsonb)

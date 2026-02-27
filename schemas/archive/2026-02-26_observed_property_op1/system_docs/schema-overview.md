@@ -11,8 +11,7 @@ This document summarizes the schema defined in `schemas/uk_air_quality_schema.sq
 - External identifiers that arrive as text (even if numeric) are stored as `*_ref`; all `*_id` columns are internal bigint keys.
 - `connectors`: network connectors with bigint `id` (internal) and `connector_code` for filename prefixes, plus `label` (source label) and `display_name` (UI), URL and polling fields (`station_display_name_template`, `overwrite_station_name`, `poll_enabled`, `poll_interval_minutes`, `poll_window_hours`, `poll_timeseries_batch_size`, `stations_bbox_supported`, `timeseries_station_filter_supported`, `last_polled_at`).
 - `categories`: high-level grouping, per connector.
-- `observed_properties`: canonical observed-property catalog shared across connectors (`code`, `display_name`, `domain` = `aq|met`, optional `canonical_uom`).
-- `phenomena`: slim connector/source bridge for what is measured; stores per-connector/source labels (`source_label`, `label`, optional `notation`/`pollutant_label`) and links to canonical `observed_properties` via `observed_property_id`.
+- `phenomena`: what is measured (pollutant/parameter), per connector; includes optional `eionet_uri` + `notation`.
 - `offerings`: logical groupings, per connector + `service_ref`.
 - `features`: features of interest with geometry (Point, 4326), per connector + `service_ref`.
 - `procedures`: sensors/methods; optional raw_formats list, per connector + `service_ref`.
