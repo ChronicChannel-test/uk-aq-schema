@@ -3,7 +3,7 @@
 Defines each network connector and its polling configuration.
 
 ## Fields
-- id: Internal integer primary key (generated identity).
+- id: Internal bigint primary key (generated identity).
 - connector_code: Short connector code used as filename prefix for connector outputs.
 - label: Source label from the upstream service.
 - display_name: UI-friendly connector name (curated).

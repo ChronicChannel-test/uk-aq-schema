@@ -3,12 +3,12 @@
 Metadata for each SOS timeseries. One row per unique series in a connector/service_ref.
 
 ## Fields
-- id: Internal integer primary key (generated identity).
+- id: Internal bigint primary key (generated identity).
 - timeseries_ref: External SOS timeseries identifier (string), unique per service_ref.
 - label: Human-readable name for the series.
 - uom: Unit of measure for values (as provided by the service).
 - station_id: FK to `stations.id` for the monitoring site.
-- connector_id: Integer FK to `connectors.id` for the SOS connector.
+- connector_id: FK to `connectors.id` for the SOS connector.
 - service_ref: External SOS service identifier (string).
 - offering_id: FK to `offerings.id` (logical grouping) when provided.
 - feature_id: FK to `features.id` (feature of interest) when provided.

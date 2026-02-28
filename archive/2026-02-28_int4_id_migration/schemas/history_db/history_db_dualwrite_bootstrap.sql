@@ -30,8 +30,8 @@ comment on column uk_aq_history.status_codes.created_at is
   'Creation timestamp for canonical status dictionary rows maintained for QA scripts and future validation, not ingest writes.';
 
 create table if not exists uk_aq_history.observations (
-  connector_id integer not null,
-  timeseries_id integer not null,
+  connector_id bigint not null,
+  timeseries_id bigint not null,
   observed_at timestamptz not null,
   value double precision,
   status_id smallint,
@@ -157,8 +157,8 @@ begin
     input.value,
     input.status_id
   from jsonb_to_recordset(rows) as input(
-    connector_id integer,
-    timeseries_id integer,
+    connector_id bigint,
+    timeseries_id bigint,
     observed_at timestamptz,
     value double precision,
     value_float8_hex text,

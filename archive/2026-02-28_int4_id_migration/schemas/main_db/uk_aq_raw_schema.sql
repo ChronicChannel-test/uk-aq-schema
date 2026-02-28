@@ -113,7 +113,7 @@ create index if not exists erg_laqn_station_checkpoints_last_polled_idx
   on erg_laqn_station_checkpoints(last_polled_at);
 
 create table if not exists uk_air_sos_timeseries_checkpoints (
-  timeseries_id integer primary key references timeseries(id) on delete cascade,
+  timeseries_id bigint primary key references timeseries(id) on delete cascade,
   last_polled_at timestamptz not null,
   updated_at timestamptz not null default now()
 );
@@ -155,7 +155,7 @@ create index if not exists openaq_station_checkpoints_last_polled_at_idx
 
 create table if not exists openaq_timeseries_checkpoints (
   station_id bigint not null references stations(id) on delete cascade,
-  timeseries_id integer not null references timeseries(id) on delete cascade,
+  timeseries_id bigint not null references timeseries(id) on delete cascade,
   next_due_at timestamptz,
   last_observed_at timestamptz,
   ingest_lag_samples int[] not null default '{}'::int[],
@@ -250,9 +250,9 @@ create table if not exists error_logs (
   message text not null,
   stack text,
   context jsonb,
-  connector_id integer references connectors(id) on delete set null,
+  connector_id bigint references connectors(id) on delete set null,
   station_id bigint references stations(id) on delete set null,
-  timeseries_id integer references timeseries(id) on delete set null,
+  timeseries_id bigint references timeseries(id) on delete set null,
   dropbox_path text
 );
 create index if not exists error_logs_created_at_idx on error_logs(created_at desc);
@@ -265,7 +265,7 @@ create index if not exists error_logs_connector_idx on error_logs(connector_id);
 
 create or replace function uk_aq_public.uk_aq_rpc_connector_select(connector_code text)
 returns table (
-  id integer,
+  id bigint,
   connector_code text,
   label text,
   service_url text,
@@ -282,7 +282,7 @@ as $$
 $$;
 
 create or replace function uk_aq_public.uk_aq_rpc_station_names(
-  connector_id integer,
+  connector_id bigint,
   service_ref text,
   station_refs text[]
 )
@@ -302,7 +302,7 @@ as $$
 $$;
 
 create or replace function uk_aq_public.uk_aq_rpc_station_ids(
-  connector_id integer,
+  connector_id bigint,
   service_ref text,
   station_refs text[]
 )
@@ -400,7 +400,7 @@ create or replace function uk_aq_public.uk_aq_rpc_openaq_timeseries_checkpoints_
 )
 returns table (
   station_id bigint,
-  timeseries_id integer,
+  timeseries_id bigint,
   next_due_at timestamptz,
   last_observed_at timestamptz,
   ingest_lag_samples int[],
@@ -451,7 +451,7 @@ begin
     r.last_polled_at
   from jsonb_to_recordset(rows) as r(
     station_id bigint,
-    timeseries_id integer,
+    timeseries_id bigint,
     next_due_at timestamptz,
     last_observed_at timestamptz,
     ingest_lag_samples int[],
@@ -484,7 +484,7 @@ security definer
 set search_path = uk_aq_core, uk_aq_raw, public, pg_catalog
 as $$
 declare
-  v_connector_id integer;
+  v_connector_id bigint;
 begin
   select id into v_connector_id
   from uk_aq_core.connectors
@@ -587,7 +587,7 @@ create or replace function uk_aq_public.uk_aq_rpc_dispatch_claim(
 )
 returns table (
   claimed boolean,
-  connector_id integer,
+  connector_id bigint,
   last_run_start timestamptz,
   last_run_end timestamptz
 )
@@ -634,7 +634,7 @@ create or replace function uk_aq_public.uk_aq_rpc_latest_ingest_runs(
   p_since timestamptz default null
 )
 returns table (
-  connector_id integer,
+  connector_id bigint,
   connector_code text,
   run_started_at timestamptz,
   run_ended_at timestamptz,
@@ -725,7 +725,7 @@ begin
     station_type text,
     region text,
     geometry text,
-    connector_id integer,
+    connector_id bigint,
     last_seen_at timestamptz,
     removed_at timestamptz
   )
@@ -793,7 +793,7 @@ begin
 
   with parsed as (
     select
-      nullif(item->>'connector_id', '')::integer as connector_id,
+      nullif(item->>'connector_id', '')::bigint as connector_id,
       nullif(trim(coalesce(item->>'source_label', item->>'eionet_uri')), '') as source_label,
       nullif(trim(item->>'label'), '') as label,
       nullif(trim(item->>'notation'), '') as notation,
@@ -873,7 +873,7 @@ begin
 
   with parsed as (
     select
-      nullif(item->>'connector_id', '')::integer as connector_id,
+      nullif(item->>'connector_id', '')::bigint as connector_id,
       nullif(trim(coalesce(item->>'source_label', item->>'eionet_uri')), '') as source_label,
       nullif(trim(item->>'label'), '') as label,
       nullif(trim(item->>'notation'), '') as notation,
@@ -935,7 +935,7 @@ end;
 $$;
 
 create or replace function uk_aq_public.uk_aq_rpc_phenomena_ids(
-  connector_id integer,
+  connector_id bigint,
   eionet_uris text[]
 )
 returns table (
@@ -987,7 +987,7 @@ begin
     label text,
     uom text,
     station_id bigint,
-    connector_id integer,
+    connector_id bigint,
     service_ref text,
     phenomenon_id bigint
   )
@@ -1002,13 +1002,13 @@ end;
 $$;
 
 create or replace function uk_aq_public.uk_aq_rpc_timeseries_ids(
-  connector_id integer,
+  connector_id bigint,
   service_ref text,
   timeseries_refs text[]
 )
 returns table (
   timeseries_ref text,
-  id integer
+  id bigint
 )
 language sql
 security definer
@@ -1022,13 +1022,13 @@ as $$
 $$;
 
 create or replace function uk_aq_public.uk_aq_rpc_timeseries_refs_by_station_ids(
-  connector_id integer,
+  connector_id bigint,
   service_ref text,
   station_ids bigint[]
 )
 returns table (
   station_id bigint,
-  timeseries_id integer,
+  timeseries_id bigint,
   timeseries_ref text
 )
 language sql
@@ -1077,8 +1077,8 @@ begin
     r.value,
     r.status
   from jsonb_to_recordset(rows) as r(
-    connector_id integer,
-    timeseries_id integer,
+    connector_id bigint,
+    timeseries_id bigint,
     observed_at timestamptz,
     value double precision,
     status text
@@ -1192,9 +1192,9 @@ begin
     coalesce(entry->>'message', 'unknown'),
     entry->>'stack',
     entry->'context',
-    nullif(entry->>'connector_id', '')::integer,
+    nullif(entry->>'connector_id', '')::bigint,
     nullif(entry->>'station_id', '')::bigint,
-    nullif(entry->>'timeseries_id', '')::integer,
+    nullif(entry->>'timeseries_id', '')::bigint,
     entry->>'dropbox_path'
   )
   returning uk_aq_raw.error_logs.id into new_id;
@@ -1320,11 +1320,11 @@ $$;
 revoke all on function uk_aq_public.uk_aq_rpc_connector_select(text) from public;
 grant execute on function uk_aq_public.uk_aq_rpc_connector_select(text) to service_role;
 
-revoke all on function uk_aq_public.uk_aq_rpc_station_names(integer, text, text[]) from public;
-grant execute on function uk_aq_public.uk_aq_rpc_station_names(integer, text, text[]) to service_role;
+revoke all on function uk_aq_public.uk_aq_rpc_station_names(bigint, text, text[]) from public;
+grant execute on function uk_aq_public.uk_aq_rpc_station_names(bigint, text, text[]) to service_role;
 
-revoke all on function uk_aq_public.uk_aq_rpc_station_ids(integer, text, text[]) from public;
-grant execute on function uk_aq_public.uk_aq_rpc_station_ids(integer, text, text[]) to service_role;
+revoke all on function uk_aq_public.uk_aq_rpc_station_ids(bigint, text, text[]) from public;
+grant execute on function uk_aq_public.uk_aq_rpc_station_ids(bigint, text, text[]) to service_role;
 
 revoke all on function uk_aq_public.uk_aq_rpc_openaq_station_checkpoints_select(bigint[]) from public;
 grant execute on function uk_aq_public.uk_aq_rpc_openaq_station_checkpoints_select(bigint[]) to service_role;
@@ -1356,22 +1356,22 @@ grant execute on function uk_aq_public.uk_aq_rpc_station_metadata_upsert(jsonb) 
 revoke all on function uk_aq_public.uk_aq_rpc_phenomena_upsert(jsonb) from public;
 grant execute on function uk_aq_public.uk_aq_rpc_phenomena_upsert(jsonb) to service_role;
 
-revoke all on function uk_aq_public.uk_aq_rpc_phenomena_ids(integer, text[]) from public;
-grant execute on function uk_aq_public.uk_aq_rpc_phenomena_ids(integer, text[]) to service_role;
+revoke all on function uk_aq_public.uk_aq_rpc_phenomena_ids(bigint, text[]) from public;
+grant execute on function uk_aq_public.uk_aq_rpc_phenomena_ids(bigint, text[]) to service_role;
 
 revoke all on function uk_aq_public.uk_aq_rpc_timeseries_upsert(jsonb) from public;
 grant execute on function uk_aq_public.uk_aq_rpc_timeseries_upsert(jsonb) to service_role;
 
-revoke all on function uk_aq_public.uk_aq_rpc_timeseries_ids(integer, text, text[]) from public;
-grant execute on function uk_aq_public.uk_aq_rpc_timeseries_ids(integer, text, text[]) to service_role;
+revoke all on function uk_aq_public.uk_aq_rpc_timeseries_ids(bigint, text, text[]) from public;
+grant execute on function uk_aq_public.uk_aq_rpc_timeseries_ids(bigint, text, text[]) to service_role;
 
 revoke all on function uk_aq_public.uk_aq_rpc_timeseries_refs_by_station_ids(
-  integer,
+  bigint,
   text,
   bigint[]
 ) from public;
 grant execute on function uk_aq_public.uk_aq_rpc_timeseries_refs_by_station_ids(
-  integer,
+  bigint,
   text,
   bigint[]
 ) to service_role;

@@ -8,15 +8,15 @@ This document summarizes the schema defined in `schemas/uk_air_quality_schema.sq
 - TODO: When we refactor schemas, move extensions (postgis/pgcrypto) out of `public` into a dedicated schema (e.g. `extensions`) and update function search_path entries accordingly.
 
 ## Core reference tables
-- External identifiers that arrive as text (even if numeric) are stored as `*_ref`; internal joins use `*_id` columns. `connectors.id`/`timeseries.id` and all `connector_id`/`timeseries_id` columns are integer; other ids can remain bigint.
-- `connectors`: network connectors with integer `id` (internal) and `connector_code` for filename prefixes, plus `label` (source label) and `display_name` (UI), URL and polling fields (`station_display_name_template`, `overwrite_station_name`, `poll_enabled`, `poll_interval_minutes`, `poll_window_hours`, `poll_timeseries_batch_size`, `stations_bbox_supported`, `timeseries_station_filter_supported`, `last_polled_at`).
+- External identifiers that arrive as text (even if numeric) are stored as `*_ref`; all `*_id` columns are internal bigint keys.
+- `connectors`: network connectors with bigint `id` (internal) and `connector_code` for filename prefixes, plus `label` (source label) and `display_name` (UI), URL and polling fields (`station_display_name_template`, `overwrite_station_name`, `poll_enabled`, `poll_interval_minutes`, `poll_window_hours`, `poll_timeseries_batch_size`, `stations_bbox_supported`, `timeseries_station_filter_supported`, `last_polled_at`).
 - `categories`: high-level grouping, per connector.
 - `observed_properties`: canonical observed-property catalog shared across connectors (`code`, `display_name`, `domain` = `aq|met`, optional `canonical_uom`).
 - `phenomena`: slim connector/source bridge for what is measured; stores per-connector/source labels (`source_label`, `label`, optional `notation`/`pollutant_label`) and links to canonical `observed_properties` via `observed_property_id`.
 - `offerings`: logical groupings, per connector + `service_ref`.
 - `features`: features of interest with geometry (Point, 4326), per connector + `service_ref`.
 - `procedures`: sensors/methods; optional raw_formats list, per connector + `service_ref`.
-- `stations`: monitoring sites; bigint `id` (internal) with `station_ref` (external) and `service_ref` (remote SOS service id), integer `connector_id`, unique `(connector_id, service_ref, station_ref)`, plus lifecycle fields `first_seen_at`, `last_seen_at`, `removed_at`. Includes `station_name` as a cleaned display name, `station_type` as the service-provided classification, `station_exposure` for indoor/outdoor, and stores `la_code`/`la_version` and `pcon_code`/`pcon_version` for geography lookups.
+- `stations`: monitoring sites; bigint `id` (internal) with `station_ref` (external) and `service_ref` (remote SOS service id), unique `(connector_id, service_ref, station_ref)`, plus lifecycle fields `first_seen_at`, `last_seen_at`, `removed_at`. Includes `station_name` as a cleaned display name, `station_type` as the service-provided classification, `station_exposure` for indoor/outdoor, and stores `la_code`/`la_version` and `pcon_code`/`pcon_version` for geography lookups.
 - `station_metadata`: per-station JSON attributes for network-specific fields not stored on `stations` (ownership, device, status, siting metadata).
 - `station_network_memberships`: multi-network membership metadata for stations, including a `network_code` (aligned to `uk_aq_networks.network_code`) and `is_primary` flag for preferred ingest source.
 - `uk_aq_networks`: curated network catalog with `network_code`, `display_name`, and `connector_code` (use `uk_air_sos` for SOS-derived networks).
@@ -36,15 +36,15 @@ This document summarizes the schema defined in `schemas/uk_air_quality_schema.sq
 - `uk_aq_fix_station_geometry_swapped()`: fixes stations with swapped lat/lon coordinates.
 
 ## Timeseries and metadata
-- `timeseries`: SOS timeseries metadata; integer `id` (internal) with `timeseries_ref` (external), `service_ref`, integer `connector_id`, and `station_id` bigint FK.
+- `timeseries`: SOS timeseries metadata; bigint `id` (internal) with `timeseries_ref` (external), `service_ref`, and `station_id` bigint FK.
 - `reference_values`: optional reference lines attached to a timeseries (name, color, value).
 
 ## Observations
-- `observations`: raw time-value pairs for each timeseries (observed_at timestamptz, value, status flag). Partitioned by integer `connector_id` with primary key `(connector_id, timeseries_id, observed_at)` where both ids are integer.
+- `observations`: raw time-value pairs for each timeseries (observed_at timestamptz, value, status flag). Partitioned by `connector_id` with primary key `(connector_id, timeseries_id, observed_at)`.
 
 ## History schema (uk_aq_history)
 - Defined in `schemas/uk_aq_history_schema.sql`.
-- `uk_aq_history.observations`: history-only fact table keyed by integer internal ids (`connector_id`, `timeseries_id`, `observed_at`) with `value`, `status_id`, and `created_at`.
+- `uk_aq_history.observations`: history-only fact table keyed by internal ids (`connector_id`, `timeseries_id`, `observed_at`) with `value`, `status`, and `created_at`.
 - RLS: service_role only (intended for Edge Functions / server-side access).
 - The history schema is additive only; no existing tables are moved out of `public` yet.
 

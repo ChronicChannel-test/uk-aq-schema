@@ -22,8 +22,8 @@ create index if not exists history_observation_outbox_created_at_idx
   on uk_aq_raw.history_observation_outbox (created_at);
 
 create table if not exists uk_aq_raw.history_sync_receipt_daily (
-  connector_id integer not null,
-  timeseries_id integer not null,
+  connector_id bigint not null,
+  timeseries_id bigint not null,
   observed_day date not null,
   synced_at timestamptz not null default now(),
   primary key (connector_id, timeseries_id, observed_day)
@@ -283,8 +283,8 @@ begin
     input.observed_day,
     now()
   from jsonb_to_recordset(rows) as input(
-    connector_id integer,
-    timeseries_id integer,
+    connector_id bigint,
+    timeseries_id bigint,
     observed_day date
   )
   where input.connector_id is not null

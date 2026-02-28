@@ -1,8 +1,7 @@
 // Generated from schemas/uk_air_quality_schema.sql
-// Includes indexes (unique, partial, and method hints as comments).
 
 Table connectors {
-  id integer [pk]
+  id bigint [pk]
   connector_code text
   label text
   display_name text
@@ -17,21 +16,13 @@ Table connectors {
   timeseries_station_filter_supported boolean
   last_polled_at timestamptz
   created_at timestamptz
-
-  indexes {
-    (connector_code) [name: 'connectors_connector_code_uidx', unique]
-  }
 }
 
 Table categories {
   id bigint [pk]
   category_ref text
   label text
-  connector_id integer
-
-  indexes {
-    (connector_id, category_ref) [name: 'categories_connector_ref_uidx', unique]
-  }
+  connector_id bigint
 }
 
 Table phenomena {
@@ -40,11 +31,7 @@ Table phenomena {
   eionet_uri text
   notation text
   pollutant_label text
-  connector_id integer
-
-  indexes {
-    (connector_id, eionet_uri) [name: 'phenomena_service_eionet_uidx', unique]
-  }
+  connector_id bigint
 }
 
 Table offerings {
@@ -52,11 +39,7 @@ Table offerings {
   offering_ref text
   label text
   service_ref text
-  connector_id integer
-
-  indexes {
-    (connector_id, service_ref, offering_ref) [name: 'offerings_connector_ref_uidx', unique]
-  }
+  connector_id bigint
 }
 
 Table features {
@@ -65,11 +48,7 @@ Table features {
   label text
   geometry geography(Point, 4326)
   service_ref text
-  connector_id integer
-
-  indexes {
-    (connector_id, service_ref, feature_ref) [name: 'features_connector_ref_uidx', unique]
-  }
+  connector_id bigint
 }
 
 Table procedures {
@@ -78,11 +57,7 @@ Table procedures {
   label text
   raw_formats text[]
   service_ref text
-  connector_id integer
-
-  indexes {
-    (connector_id, service_ref, procedure_ref) [name: 'procedures_connector_ref_uidx', unique]
-  }
+  connector_id bigint
 }
 
 Table stations {
@@ -99,26 +74,12 @@ Table stations {
   pcon_code text
   pcon_version text
   geometry geography(Point, 4326)
-  connector_id integer
+  connector_id bigint
   category_id bigint
   first_seen_at timestamptz
   last_seen_at timestamptz
   removed_at timestamptz
   created_at timestamptz
-
-  indexes {
-    (connector_id, service_ref, station_ref) [name: 'stations_connector_ref_uidx', unique]
-    // using gist
-    (geometry) [name: 'stations_geom_idx']
-    // using gist
-    (geometry) [name: 'stations_geom_cast_idx']
-    (la_code) [name: 'stations_la_code_idx']
-    (la_version) [name: 'stations_la_version_idx']
-    (pcon_code) [name: 'stations_pcon_code_idx']
-    (pcon_version) [name: 'stations_pcon_version_idx']
-    // where pcon_code is null
-    (id) [name: 'stations_pcon_code_null_idx']
-  }
 }
 
 Table station_metadata {
@@ -146,11 +107,6 @@ Table uk_air_sos_networks {
   network_display_name text
   created_at timestamptz
   updated_at timestamptz
-
-  indexes {
-    // where network_code is not null
-    (network_code) [name: 'uk_air_sos_networks_network_code_uidx', unique]
-  }
 }
 
 Table uk_air_sos_network_pollutants {
@@ -187,14 +143,6 @@ Table uk_air_sos_site_register {
   snapshot_at timestamptz
   raw_payload jsonb
   created_at timestamptz
-
-  indexes {
-    (uk_air_id) [name: 'uk_air_sos_site_register_uk_air_id_idx']
-    (snapshot_at) [name: 'uk_air_sos_site_register_snapshot_idx']
-    // using gin
-    (networks) [name: 'uk_air_sos_site_register_networks_gin_idx']
-    (uk_air_id, snapshot_at) [name: 'uk_air_sos_site_register_snapshot_uidx', unique]
-  }
 }
 
 Table uk_air_sos_station_refs {
@@ -205,17 +153,12 @@ Table uk_air_sos_station_refs {
   source_snapshot_at timestamptz
   created_at timestamptz
   updated_at timestamptz
-
-  indexes {
-    (uk_air_id) [name: 'uk_air_sos_station_refs_uk_air_id_idx']
-    (source_snapshot_at) [name: 'uk_air_sos_station_refs_snapshot_idx']
-  }
 }
 
 Table breathelondon_timeseries_checkpoints {
   station_id bigint
   species text
-  timeseries_id integer
+  timeseries_id bigint
   last_observed_at timestamptz
   last_fetch_at timestamptz
   last_error text
@@ -224,7 +167,6 @@ Table breathelondon_timeseries_checkpoints {
 
   indexes {
     (station_id, species) [pk]
-    (last_observed_at) [name: 'breathelondon_timeseries_checkpoints_last_obs_idx']
   }
 }
 
@@ -236,10 +178,6 @@ Table pcon_current {
   region text
   country text
   created_at timestamptz
-
-  indexes {
-    (gss_code) [name: 'pcon_current_gss_code_uidx', unique]
-  }
 }
 
 Table pcon_legacy {
@@ -250,10 +188,6 @@ Table pcon_legacy {
   region text
   country text
   created_at timestamptz
-
-  indexes {
-    (gss_code) [name: 'pcon_legacy_gss_code_uidx', unique]
-  }
 }
 
 Table gss_codes {
@@ -263,10 +197,6 @@ Table gss_codes {
   geography_type text
   valid_from date
   valid_to date
-
-  indexes {
-    (gss_code) [name: 'gss_codes_gss_code_uidx', unique]
-  }
 }
 
 Table uk_aq_region_names {
@@ -288,20 +218,16 @@ Table uk_aq_guidelines {
   valid_from date
   valid_to date
   created_at timestamptz
-
-  indexes {
-    (pollutant, averaging_period_label, level_label, source) [name: 'uk_aq_guidelines_uidx', unique]
-  }
 }
 
 Table timeseries {
-  id integer [pk]
+  id bigint [pk]
   timeseries_ref text
   label text
   uom text
   station_id bigint
   service_ref text
-  connector_id integer
+  connector_id bigint
   offering_id bigint
   feature_id bigint
   procedure_id bigint
@@ -314,18 +240,11 @@ Table timeseries {
   rendering_hints jsonb
   status_intervals jsonb
   created_at timestamptz
-
-  indexes {
-    (connector_id, service_ref, timeseries_ref) [name: 'timeseries_connector_ref_uidx', unique]
-    (station_id) [name: 'timeseries_station_idx']
-    (phenomenon_id) [name: 'timeseries_phenomenon_idx']
-    (phenomenon_id, station_id) [name: 'timeseries_phenomenon_station_idx']
-  }
 }
 
 Table reference_values {
   id uuid [pk]
-  timeseries_id integer
+  timeseries_id bigint
   name text
   color text
   value numeric
@@ -333,7 +252,7 @@ Table reference_values {
 }
 
 Table observations {
-  timeseries_id integer
+  timeseries_id bigint
   observed_at timestamptz
   value numeric
   status text
@@ -341,7 +260,6 @@ Table observations {
 
   indexes {
     (timeseries_id, observed_at) [pk]
-    (observed_at) [name: 'observations_time_idx']
   }
 }
 
@@ -353,16 +271,10 @@ Table error_logs {
   message text
   stack text
   context jsonb
-  connector_id integer
+  connector_id bigint
   station_id bigint
-  timeseries_id integer
+  timeseries_id bigint
   dropbox_path text
-
-  indexes {
-    (created_at) [name: 'error_logs_created_at_idx']
-    (source) [name: 'error_logs_source_idx']
-    (connector_id) [name: 'error_logs_connector_idx']
-  }
 }
 
 Table pm25_population_exposure {
@@ -386,10 +298,6 @@ Table pm25_amct_sites {
   exceeded_final boolean
   data_capture_ok boolean
   collected_at timestamptz
-
-  indexes {
-    (site_code, year) [name: 'pm25_amct_site_year_idx']
-  }
 }
 
 Ref: categories.connector_id > connectors.id

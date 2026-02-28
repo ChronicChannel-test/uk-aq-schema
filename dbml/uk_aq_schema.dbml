@@ -1,7 +1,7 @@
 // Generated from schemas/uk_air_quality_schema.sql
 
 Table connectors {
-  id bigint [pk]
+  id integer [pk]
   connector_code text
   label text
   display_name text
@@ -22,7 +22,7 @@ Table categories {
   id bigint [pk]
   category_ref text
   label text
-  connector_id bigint
+  connector_id integer
 }
 
 Table phenomena {
@@ -31,7 +31,7 @@ Table phenomena {
   eionet_uri text
   notation text
   pollutant_label text
-  connector_id bigint
+  connector_id integer
 }
 
 Table offerings {
@@ -39,7 +39,7 @@ Table offerings {
   offering_ref text
   label text
   service_ref text
-  connector_id bigint
+  connector_id integer
 }
 
 Table features {
@@ -48,7 +48,7 @@ Table features {
   label text
   geometry geography(Point, 4326)
   service_ref text
-  connector_id bigint
+  connector_id integer
 }
 
 Table procedures {
@@ -57,7 +57,7 @@ Table procedures {
   label text
   raw_formats text[]
   service_ref text
-  connector_id bigint
+  connector_id integer
 }
 
 Table stations {
@@ -74,7 +74,7 @@ Table stations {
   pcon_code text
   pcon_version text
   geometry geography(Point, 4326)
-  connector_id bigint
+  connector_id integer
   category_id bigint
   first_seen_at timestamptz
   last_seen_at timestamptz
@@ -158,7 +158,7 @@ Table uk_air_sos_station_refs {
 Table breathelondon_timeseries_checkpoints {
   station_id bigint
   species text
-  timeseries_id bigint
+  timeseries_id integer
   last_observed_at timestamptz
   last_fetch_at timestamptz
   last_error text
@@ -221,13 +221,13 @@ Table uk_aq_guidelines {
 }
 
 Table timeseries {
-  id bigint [pk]
+  id integer [pk]
   timeseries_ref text
   label text
   uom text
   station_id bigint
   service_ref text
-  connector_id bigint
+  connector_id integer
   offering_id bigint
   feature_id bigint
   procedure_id bigint
@@ -244,7 +244,7 @@ Table timeseries {
 
 Table reference_values {
   id uuid [pk]
-  timeseries_id bigint
+  timeseries_id integer
   name text
   color text
   value numeric
@@ -252,7 +252,7 @@ Table reference_values {
 }
 
 Table observations {
-  timeseries_id bigint
+  timeseries_id integer
   observed_at timestamptz
   value numeric
   status text
@@ -271,9 +271,9 @@ Table error_logs {
   message text
   stack text
   context jsonb
-  connector_id bigint
+  connector_id integer
   station_id bigint
-  timeseries_id bigint
+  timeseries_id integer
   dropbox_path text
 }
 

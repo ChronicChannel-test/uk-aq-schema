@@ -2,7 +2,7 @@
 // Generated from dbml/uk_aq_schema_extended.dbml
 
 Table connectors [note: 'External data sources. UK-AIR SOS is one connector that exposes many networks.'] {
-  id integer [pk]
+  id bigint [pk]
   connector_code text
   label text
   display_name text
@@ -94,7 +94,7 @@ Table stations [note: 'SOS station metadata. station_ref comes from SOS metadata
   pcon_code text
   pcon_version text
   geometry geography(Point, 4326)
-  connector_id integer
+  connector_id bigint
   category_id bigint
   first_seen_at timestamptz
   last_seen_at timestamptz
@@ -122,7 +122,7 @@ Table phenomena [note: 'Pollutant definitions per connector; joined to timeserie
   eionet_uri text
   notation text
   pollutant_label text
-  connector_id integer
+  connector_id bigint
 
   indexes {
     (connector_id, eionet_uri) [name: 'phenomena_service_eionet_uidx', unique]
@@ -130,13 +130,13 @@ Table phenomena [note: 'Pollutant definitions per connector; joined to timeserie
 }
 
 Table timeseries [note: 'Per-phenomenon time series for a station. timeseries_ref is used for polling/observation ingestion.'] {
-  id integer [pk]
+  id bigint [pk]
   timeseries_ref text
   label text
   uom text
   station_id bigint
   service_ref text
-  connector_id integer
+  connector_id bigint
   offering_id bigint
   feature_id bigint
   procedure_id bigint
@@ -159,7 +159,7 @@ Table timeseries [note: 'Per-phenomenon time series for a station. timeseries_re
 }
 
 Table observations [note: 'Time-value measurements keyed by timeseries_id (resolved from timeseries_ref).'] {
-  timeseries_id integer
+  timeseries_id bigint
   observed_at timestamptz
   value numeric
   status text

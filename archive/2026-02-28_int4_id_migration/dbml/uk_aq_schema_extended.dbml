@@ -2,7 +2,7 @@
 // Includes indexes (unique, partial, and method hints as comments).
 
 Table connectors {
-  id integer [pk]
+  id bigint [pk]
   connector_code text
   label text
   display_name text
@@ -27,7 +27,7 @@ Table categories {
   id bigint [pk]
   category_ref text
   label text
-  connector_id integer
+  connector_id bigint
 
   indexes {
     (connector_id, category_ref) [name: 'categories_connector_ref_uidx', unique]
@@ -40,7 +40,7 @@ Table phenomena {
   eionet_uri text
   notation text
   pollutant_label text
-  connector_id integer
+  connector_id bigint
 
   indexes {
     (connector_id, eionet_uri) [name: 'phenomena_service_eionet_uidx', unique]
@@ -52,7 +52,7 @@ Table offerings {
   offering_ref text
   label text
   service_ref text
-  connector_id integer
+  connector_id bigint
 
   indexes {
     (connector_id, service_ref, offering_ref) [name: 'offerings_connector_ref_uidx', unique]
@@ -65,7 +65,7 @@ Table features {
   label text
   geometry geography(Point, 4326)
   service_ref text
-  connector_id integer
+  connector_id bigint
 
   indexes {
     (connector_id, service_ref, feature_ref) [name: 'features_connector_ref_uidx', unique]
@@ -78,7 +78,7 @@ Table procedures {
   label text
   raw_formats text[]
   service_ref text
-  connector_id integer
+  connector_id bigint
 
   indexes {
     (connector_id, service_ref, procedure_ref) [name: 'procedures_connector_ref_uidx', unique]
@@ -99,7 +99,7 @@ Table stations {
   pcon_code text
   pcon_version text
   geometry geography(Point, 4326)
-  connector_id integer
+  connector_id bigint
   category_id bigint
   first_seen_at timestamptz
   last_seen_at timestamptz
@@ -215,7 +215,7 @@ Table uk_air_sos_station_refs {
 Table breathelondon_timeseries_checkpoints {
   station_id bigint
   species text
-  timeseries_id integer
+  timeseries_id bigint
   last_observed_at timestamptz
   last_fetch_at timestamptz
   last_error text
@@ -295,13 +295,13 @@ Table uk_aq_guidelines {
 }
 
 Table timeseries {
-  id integer [pk]
+  id bigint [pk]
   timeseries_ref text
   label text
   uom text
   station_id bigint
   service_ref text
-  connector_id integer
+  connector_id bigint
   offering_id bigint
   feature_id bigint
   procedure_id bigint
@@ -325,7 +325,7 @@ Table timeseries {
 
 Table reference_values {
   id uuid [pk]
-  timeseries_id integer
+  timeseries_id bigint
   name text
   color text
   value numeric
@@ -333,7 +333,7 @@ Table reference_values {
 }
 
 Table observations {
-  timeseries_id integer
+  timeseries_id bigint
   observed_at timestamptz
   value numeric
   status text
@@ -353,9 +353,9 @@ Table error_logs {
   message text
   stack text
   context jsonb
-  connector_id integer
+  connector_id bigint
   station_id bigint
-  timeseries_id integer
+  timeseries_id bigint
   dropbox_path text
 
   indexes {

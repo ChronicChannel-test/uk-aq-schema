@@ -77,7 +77,7 @@ drop function if exists uk_aq_public.uk_aq_latest_rpc(
   text,
   text,
   text,
-  integer,
+  bigint,
   text,
   int,
   text
@@ -87,20 +87,20 @@ drop function if exists uk_aq_public.uk_aq_latest_rpc(
   text,
   text,
   text,
-  integer,
+  bigint,
   text,
   int,
   text,
   timestamptz,
   timestamptz,
-  integer
+  bigint
 );
 
 drop function if exists uk_aq_public.uk_aq_latest_rpc(
   text,
   text,
   text,
-  integer,
+  bigint,
   text,
   int,
   text,
@@ -111,23 +111,23 @@ create or replace function uk_aq_public.uk_aq_latest_rpc(
   region text default null,
   pcon_code text default null,
   station_like text default null,
-  connector_id integer default null,
+  connector_id bigint default null,
   pollutant text default null,
   limit_rows int default 1000,
   window_label text default null,
   since_ts timestamptz default null,
   since_updated_at timestamptz default null,
-  since_updated_id integer default null
+  since_updated_id bigint default null
 )
 returns table (
-  id integer,
+  id bigint,
   updated_at timestamptz,
   timeseries_ref text,
   label text,
   uom text,
   last_value double precision,
   last_value_at timestamptz,
-  connector_id integer,
+  connector_id bigint,
   connector jsonb,
   station jsonb,
   phenomenon jsonb
@@ -338,45 +338,45 @@ grant execute on function uk_aq_public.uk_aq_latest_rpc(
   text,
   text,
   text,
-  integer,
+  bigint,
   text,
   int,
   text,
   timestamptz,
   timestamptz,
-  integer
+  bigint
 ) to anon, authenticated;
 
 grant execute on function uk_aq_public.uk_aq_latest_rpc(
   text,
   text,
   text,
-  integer,
+  bigint,
   text,
   int,
   text,
   timestamptz,
   timestamptz,
-  integer
+  bigint
 ) to service_role;
 
 -- uk_aq_timeseries RPC for read-only access (Edge function backing).
 
 drop function if exists uk_aq_public.uk_aq_timeseries_rpc(
-  integer,
+  bigint,
   text,
   int
 );
 
 drop function if exists uk_aq_public.uk_aq_timeseries_rpc(
-  integer,
+  bigint,
   text,
   int,
   timestamptz
 );
 
 drop function if exists uk_aq_public.uk_aq_timeseries_rpc(
-  integer,
+  bigint,
   text,
   int,
   timestamptz,
@@ -384,14 +384,14 @@ drop function if exists uk_aq_public.uk_aq_timeseries_rpc(
 );
 
 create or replace function uk_aq_public.uk_aq_timeseries_rpc(
-  timeseries_id integer,
+  timeseries_id bigint,
   window_label text default '24h',
   limit_rows int default null,
   since_ts timestamptz default null,
   include_status boolean default true
 )
 returns table (
-  timeseries_id integer,
+  timeseries_id bigint,
   "window" text,
   start timestamptz,
   "end" timestamptz,
@@ -405,7 +405,7 @@ set search_path = uk_aq_core, public, pg_catalog
 as $$
   with params as (
     select
-      $1::integer as timeseries_id,
+      $1::bigint as timeseries_id,
       case
         when lower(nullif(trim(window_label), '')) in ('12h','24h','7d','30d')
           then lower(nullif(trim(window_label), ''))
@@ -545,7 +545,7 @@ as $$
 $$;
 
 grant execute on function uk_aq_public.uk_aq_timeseries_rpc(
-  integer,
+  bigint,
   text,
   int,
   timestamptz,
@@ -553,7 +553,7 @@ grant execute on function uk_aq_public.uk_aq_timeseries_rpc(
 ) to anon, authenticated;
 
 grant execute on function uk_aq_public.uk_aq_timeseries_rpc(
-  integer,
+  bigint,
   text,
   int,
   timestamptz,
@@ -629,7 +629,7 @@ grant execute on function uk_aq_public.uk_aq_pcon_hex_rpc(
 -- uk_aq_stations RPC for read-only access (Edge function backing).
 
 create or replace function uk_aq_public.uk_aq_stations_rpc(
-  connector_id integer default null,
+  connector_id bigint default null,
   region text default null,
   station_like text default null,
   limit_rows int default null,
@@ -687,7 +687,7 @@ as $$
 $$;
 
 grant execute on function uk_aq_public.uk_aq_stations_rpc(
-  integer,
+  bigint,
   text,
   text,
   int,
@@ -695,7 +695,7 @@ grant execute on function uk_aq_public.uk_aq_stations_rpc(
 ) to anon, authenticated;
 
 grant execute on function uk_aq_public.uk_aq_stations_rpc(
-  integer,
+  bigint,
   text,
   text,
   int,
@@ -712,13 +712,13 @@ create or replace function uk_aq_public.uk_aq_surbiton_latest_rpc(
   limit_rows int default 1000
 )
 returns table (
-  id integer,
+  id bigint,
   timeseries_ref text,
   label text,
   uom text,
   last_value double precision,
   last_value_at timestamptz,
-  connector_id integer,
+  connector_id bigint,
   connector jsonb,
   station jsonb,
   phenomenon jsonb
@@ -731,7 +731,7 @@ as $$
     select
       nullif(trim(region), '') as region,
       nullif(trim(station_like), '') as station_like,
-      nullif(trim(connector_id), '')::integer as connector_id,
+      nullif(trim(connector_id), '')::bigint as connector_id,
       nullif(trim(pollutant), '') as pollutant,
       least(10000, greatest(1, coalesce(limit_rows, 1000)))::int as limit_rows
   ),
