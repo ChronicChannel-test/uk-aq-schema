@@ -22,6 +22,8 @@ from pg_constraint c
 join pg_class rel on rel.oid = c.conrelid
 join pg_namespace n on n.oid = rel.relnamespace
 where n.nspname in ('uk_aq_core', 'uk_aq_raw', 'uk_aq_history')
+  and c.conparentid = 0
+  and not rel.relispartition
   and c.contype in ('p', 'u', 'f', 'c')
   and (
     exists (
@@ -73,7 +75,7 @@ begin
       constraint_name
   loop
     execute format(
-      'alter table %s drop constraint %I',
+      'alter table %s drop constraint if exists %I',
       v_row.table_name,
       v_row.constraint_name
     );
@@ -96,6 +98,7 @@ begin
     join pg_attribute a on a.attrelid = c.oid
     join pg_type t on t.oid = a.atttypid
     where c.relkind in ('r', 'p')
+      and not c.relispartition
       and a.attnum > 0
       and not a.attisdropped
       and n.nspname in ('uk_aq_core', 'uk_aq_raw', 'uk_aq_history')
