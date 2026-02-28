@@ -23,18 +23,35 @@ join pg_class rel on rel.oid = c.conrelid
 join pg_namespace n on n.oid = rel.relnamespace
 where n.nspname in ('uk_aq_core', 'uk_aq_raw', 'uk_aq_history')
   and c.contype in ('p', 'u', 'f', 'c')
-  and exists (
-    select 1
-    from unnest(c.conkey) as key_attnum(attnum)
-    join pg_attribute a
-      on a.attrelid = c.conrelid
-     and a.attnum = key_attnum.attnum
-    where a.attname in ('connector_id', 'timeseries_id')
-       or (
-         a.attname = 'id'
-         and n.nspname = 'uk_aq_core'
-         and rel.relname in ('connectors', 'timeseries')
-       )
+  and (
+    exists (
+      select 1
+      from unnest(c.conkey) as key_attnum(attnum)
+      join pg_attribute a
+        on a.attrelid = c.conrelid
+       and a.attnum = key_attnum.attnum
+      where a.attname in ('connector_id', 'timeseries_id')
+         or (
+           a.attname = 'id'
+           and n.nspname = 'uk_aq_core'
+           and rel.relname in ('connectors', 'timeseries')
+         )
+    )
+    or (
+      c.contype = 'f'
+      and exists (
+        select 1
+        from unnest(c.confkey) as parent_attnum(attnum)
+        join pg_attribute parent_a
+          on parent_a.attrelid = c.confrelid
+         and parent_a.attnum = parent_attnum.attnum
+        join pg_class parent_rel on parent_rel.oid = c.confrelid
+        join pg_namespace parent_n on parent_n.oid = parent_rel.relnamespace
+        where parent_n.nspname = 'uk_aq_core'
+          and parent_rel.relname in ('connectors', 'timeseries')
+          and parent_a.attname = 'id'
+      )
+    )
   );
 
 do $$
@@ -44,7 +61,16 @@ begin
   for v_row in
     select table_name, constraint_name
     from _int8_id_constraints
-    order by table_name::text, constraint_name
+    order by
+      case constraint_type
+        when 'f' then 1
+        when 'c' then 2
+        when 'u' then 3
+        when 'p' then 4
+        else 5
+      end,
+      table_name::text,
+      constraint_name
   loop
     execute format(
       'alter table %s drop constraint %I',
