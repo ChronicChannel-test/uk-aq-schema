@@ -262,6 +262,51 @@ create index if not exists error_logs_connector_idx on error_logs(connector_id);
 -- PM2.5 Population Exposure Indicator progress (PERT)
 
 -- Public RPCs for non-exposed schemas (service_role only)
+do $$
+declare
+  v_fn record;
+begin
+  for v_fn in
+    select
+      p.proname,
+      pg_get_function_identity_arguments(p.oid) as identity_args
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'uk_aq_public'
+      and p.proname = any(array[
+        'uk_aq_rpc_connector_select',
+        'uk_aq_rpc_station_names',
+        'uk_aq_rpc_station_ids',
+        'uk_aq_rpc_openaq_station_checkpoints_select',
+        'uk_aq_rpc_openaq_station_checkpoints_upsert',
+        'uk_aq_rpc_openaq_timeseries_checkpoints_select',
+        'uk_aq_rpc_openaq_timeseries_checkpoints_upsert',
+        'uk_aq_rpc_openaq_select_station_refs',
+        'uk_aq_rpc_dispatch_claim',
+        'uk_aq_rpc_latest_ingest_runs',
+        'uk_aq_rpc_stations_upsert',
+        'uk_aq_rpc_station_metadata_upsert',
+        'uk_aq_rpc_phenomena_upsert',
+        'uk_aq_rpc_phenomena_ids',
+        'uk_aq_rpc_timeseries_upsert',
+        'uk_aq_rpc_timeseries_ids',
+        'uk_aq_rpc_timeseries_refs_by_station_ids',
+        'uk_aq_rpc_observations_upsert',
+        'uk_aq_rpc_timeseries_last_values_update',
+        'uk_aq_rpc_error_log_insert',
+        'uk_aq_rpc_database_size_bytes',
+        'uk_aq_rpc_db_size_metric_upsert',
+        'uk_aq_rpc_db_size_metric_cleanup'
+      ])
+  loop
+    execute format(
+      'drop function if exists uk_aq_public.%I(%s)',
+      v_fn.proname,
+      v_fn.identity_args
+    );
+  end loop;
+end
+$$;
 
 create or replace function uk_aq_public.uk_aq_rpc_connector_select(connector_code text)
 returns table (
