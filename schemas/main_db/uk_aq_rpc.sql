@@ -704,6 +704,14 @@ grant execute on function uk_aq_public.uk_aq_stations_rpc(
 
 -- uk_aq_surbiton_latest RPC for read-only access (Edge function backing).
 
+drop function if exists uk_aq_public.uk_aq_surbiton_latest_rpc(
+  text,
+  text,
+  text,
+  text,
+  int
+);
+
 create or replace function uk_aq_public.uk_aq_surbiton_latest_rpc(
   region text default null,
   station_like text default null,
