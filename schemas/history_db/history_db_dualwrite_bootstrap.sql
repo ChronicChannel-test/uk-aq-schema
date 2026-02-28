@@ -5,20 +5,74 @@ create schema if not exists uk_aq_history;
 create schema if not exists uk_aq_public;
 create schema if not exists uk_aq_raw;
 
+create table if not exists uk_aq_history.status_codes (
+  status_id smallint primary key,
+  code text not null unique,
+  description text,
+  severity smallint,
+  is_public boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+comment on table uk_aq_history.status_codes is
+  'Canonical status dictionary for history observations, intended for QA scripts and future validation, not ingest writes.';
+comment on column uk_aq_history.status_codes.status_id is
+  'Canonical smallint status identifier for QA scripts and future validation, not ingest writes.';
+comment on column uk_aq_history.status_codes.code is
+  'Stable canonical status code used for QA scripts and future validation, not ingest writes.';
+comment on column uk_aq_history.status_codes.description is
+  'Optional human-readable status description for QA scripts and future validation, not ingest writes.';
+comment on column uk_aq_history.status_codes.severity is
+  'Optional canonical severity ranking for QA scripts and future validation, not ingest writes.';
+comment on column uk_aq_history.status_codes.is_public is
+  'Flag for whether the canonical status is suitable for public-facing use in QA/validation outputs; not ingest writes.';
+comment on column uk_aq_history.status_codes.created_at is
+  'Creation timestamp for canonical status dictionary rows maintained for QA scripts and future validation, not ingest writes.';
+
 create table if not exists uk_aq_history.observations (
   connector_id bigint not null,
   timeseries_id bigint not null,
   observed_at timestamptz not null,
   value double precision,
-  status text,
+  status_id smallint,
   created_at timestamptz not null default now(),
+  constraint uk_aq_history_observations_status_id_fkey
+    foreign key (status_id)
+    references uk_aq_history.status_codes(status_id)
+    on delete set null,
   primary key (connector_id, timeseries_id, observed_at)
 );
+
+alter table if exists uk_aq_history.observations
+  add column if not exists status_id smallint;
+
+alter table if exists uk_aq_history.observations
+  drop column if exists status;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint c
+    join pg_namespace n on n.oid = c.connamespace
+    where n.nspname = 'uk_aq_history'
+      and c.conname = 'uk_aq_history_observations_status_id_fkey'
+  ) then
+    execute
+      'alter table uk_aq_history.observations '
+      'add constraint uk_aq_history_observations_status_id_fkey '
+      'foreign key (status_id) '
+      'references uk_aq_history.status_codes(status_id) '
+      'on delete set null';
+  end if;
+end $$;
 
 drop index if exists uk_aq_history.uk_aq_history_observations_series_observed_idx;
 
 create index if not exists uk_aq_history_observations_observed_at_brin
   on uk_aq_history.observations using brin (observed_at);
+
+alter table if exists uk_aq_history.status_codes enable row level security;
 
 create table if not exists uk_aq_raw.history_rpc_metrics_minute (
   bucket_minute timestamptz not null,
@@ -94,21 +148,21 @@ begin
     timeseries_id,
     observed_at,
     value,
-    status
+    status_id
   )
   select
     input.connector_id,
     input.timeseries_id,
     input.observed_at,
     input.value,
-    input.status
+    input.status_id
   from jsonb_to_recordset(rows) as input(
     connector_id bigint,
     timeseries_id bigint,
     observed_at timestamptz,
     value double precision,
     value_float8_hex text,
-    status text
+    status_id smallint
   )
   where input.connector_id is not null
     and input.timeseries_id is not null
@@ -116,10 +170,10 @@ begin
   on conflict (connector_id, timeseries_id, observed_at)
   do update set
     value = excluded.value,
-    status = excluded.status
+    status_id = excluded.status_id
   where
     uk_aq_history.observations.value is distinct from excluded.value
-    or uk_aq_history.observations.status is distinct from excluded.status;
+    or uk_aq_history.observations.status_id is distinct from excluded.status_id;
 
   get diagnostics v_count = row_count;
 
@@ -189,6 +243,24 @@ grant execute on function uk_aq_public.uk_aq_rpc_history_observations_upsert(jso
 
 revoke all on function uk_aq_public.uk_aq_rpc_database_size_bytes() from public;
 grant execute on function uk_aq_public.uk_aq_rpc_database_size_bytes() to service_role;
+
+revoke all on table uk_aq_history.status_codes from public;
+revoke all on table uk_aq_history.status_codes from service_role;
+do $$
+declare
+  v_role text;
+begin
+  for v_role in
+    select rolname
+    from pg_roles
+    where rolname ilike '%ingest%'
+  loop
+    execute format(
+      'revoke all on table uk_aq_history.status_codes from %I',
+      v_role
+    );
+  end loop;
+end $$;
 
 grant usage on schema uk_aq_history to service_role;
 grant usage on schema uk_aq_public to service_role;
