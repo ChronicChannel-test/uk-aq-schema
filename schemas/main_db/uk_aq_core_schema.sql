@@ -723,6 +723,8 @@ set label = excluded.label,
     uom = excluded.uom;
 
 -- UK-AIR SOS timeseries polling helper
+drop function if exists uk_air_sos_select_timeseries_ids(integer);
+
 create or replace function uk_air_sos_select_timeseries_ids(
   batch_limit integer default 200
 )
