@@ -189,7 +189,7 @@ create index if not exists observation_rpc_metrics_minute_endpoint_idx
 
 create table if not exists db_size_metrics_hourly (
   bucket_hour timestamptz not null,
-  database_label text not null check (database_label in ('ingestdb', 'historydb')),
+  database_label text not null check (database_label in ('ingestdb', 'historydb', 'aggdailydb')),
   database_name text not null,
   size_bytes bigint not null check (size_bytes >= 0),
   source text not null default 'uk_aq_db_size_logger_cloud_run',
@@ -1291,7 +1291,7 @@ begin
     raise exception 'service_role required';
   end if;
 
-  if p_database_label not in ('ingestdb', 'historydb') then
+  if p_database_label not in ('ingestdb', 'historydb', 'aggdailydb') then
     raise exception 'invalid database_label: %', p_database_label;
   end if;
 

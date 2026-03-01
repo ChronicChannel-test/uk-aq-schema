@@ -40,7 +40,7 @@ begin
   from uk_aq_history.observations o;
 
   v_start_day := coalesce(v_min_day, v_today_utc);
-  v_end_day := greatest(coalesce(v_max_day, v_today_utc), v_today_utc + 3);
+  v_end_day := greatest(coalesce(v_max_day, v_today_utc), v_today_utc + 7);
 
   execute $ddl$
     create table uk_aq_history.observations_new (
@@ -82,7 +82,7 @@ begin
       v_partition_name
     );
 
-    if v_day between (v_today_utc - 2) and (v_today_utc + 3) then
+    if v_day between (v_today_utc - 2) and v_today_utc then
       execute format(
         'create unique index %I on uk_aq_history.%I (connector_id, timeseries_id, observed_at)',
         v_partition_name || '_hot_key_uidx',
@@ -333,53 +333,21 @@ begin
     raise exception 'window must be 33 days or less';
   end if;
 
-  if station_id is not null and to_regclass('uk_aq_core.timeseries') is null then
-    raise exception 'station_id filter unavailable in this database (missing uk_aq_core.timeseries)';
-  end if;
-
-  if timeseries_id is not null and station_id is not null then
-    return query
-    select o.*
-    from uk_aq_history.observations o
-    join uk_aq_core.timeseries ts
-      on ts.id = o.timeseries_id
-    where o.observed_at >= start_utc
-      and o.observed_at < end_utc
-      and o.timeseries_id = rpc_observations_window.timeseries_id
-      and ts.station_id = rpc_observations_window.station_id::bigint
-    order by o.observed_at asc;
-    return;
-  end if;
-
-  if timeseries_id is not null then
-    return query
-    select o.*
-    from uk_aq_history.observations o
-    where o.observed_at >= start_utc
-      and o.observed_at < end_utc
-      and o.timeseries_id = rpc_observations_window.timeseries_id
-    order by o.observed_at asc;
-    return;
-  end if;
-
-  if station_id is not null then
-    return query
-    select o.*
-    from uk_aq_history.observations o
-    join uk_aq_core.timeseries ts
-      on ts.id = o.timeseries_id
-    where o.observed_at >= start_utc
-      and o.observed_at < end_utc
-      and ts.station_id = rpc_observations_window.station_id::bigint
-    order by o.observed_at asc;
-    return;
-  end if;
-
   return query
   select o.*
   from uk_aq_history.observations o
   where o.observed_at >= start_utc
     and o.observed_at < end_utc
+    and (rpc_observations_window.timeseries_id is null or o.timeseries_id = rpc_observations_window.timeseries_id)
+    and (
+      rpc_observations_window.station_id is null
+      or exists (
+        select 1
+        from uk_aq_core.timeseries ts
+        where ts.id = o.timeseries_id
+          and ts.station_id = rpc_observations_window.station_id::bigint
+      )
+    )
   order by o.observed_at asc;
 end;
 $$;

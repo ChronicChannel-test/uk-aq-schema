@@ -28,7 +28,7 @@ declare
   v_partition_name text;
 begin
   for v_day in
-    select generate_series(v_today_utc - 2, v_today_utc + 7, interval '1 day')::date
+    select generate_series(v_today_utc - 2, v_today_utc + 3, interval '1 day')::date
   loop
     v_partition_name := format('observations_%s', to_char(v_day, 'YYYYMMDD'));
 
@@ -47,7 +47,7 @@ begin
       v_partition_name
     );
 
-    if v_day between (v_today_utc - 2) and v_today_utc then
+    if v_day between (v_today_utc - 2) and (v_today_utc + 3) then
       execute format(
         'create unique index if not exists %I on uk_aq_history.%I (connector_id, timeseries_id, observed_at)',
         v_partition_name || '_hot_key_uidx',
