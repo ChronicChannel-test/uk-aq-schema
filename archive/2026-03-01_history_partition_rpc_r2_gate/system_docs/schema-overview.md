@@ -44,9 +44,7 @@ This document summarizes the schema defined in `schemas/uk_air_quality_schema.sq
 
 ## History schema (uk_aq_history)
 - Defined in `schemas/uk_aq_history_schema.sql`.
-- `uk_aq_history.observations`: history-only fact table keyed by integer internal ids (`connector_id`, `timeseries_id`, `observed_at`) with `value` and `created_at` (no `status_id`).
-- Partitioned by UTC day range on `observed_at`, with `uk_aq_history.observations_default` as the out-of-range catch-all partition.
-- Hot partition index policy: UTC today plus previous 2 UTC days keep unique btree key `(connector_id, timeseries_id, observed_at)` plus BRIN on `observed_at`; cold partitions keep BRIN only.
+- `uk_aq_history.observations`: history-only fact table keyed by integer internal ids (`connector_id`, `timeseries_id`, `observed_at`) with `value`, `status_id`, and `created_at`.
 - RLS: service_role only (intended for Edge Functions / server-side access).
 - The history schema is additive only; no existing tables are moved out of `public` yet.
 

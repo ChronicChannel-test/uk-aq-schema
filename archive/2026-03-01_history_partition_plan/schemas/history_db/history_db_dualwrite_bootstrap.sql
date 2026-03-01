@@ -5,63 +5,74 @@ create schema if not exists uk_aq_history;
 create schema if not exists uk_aq_public;
 create schema if not exists uk_aq_raw;
 
+create table if not exists uk_aq_history.status_codes (
+  status_id smallint primary key,
+  code text not null unique,
+  description text,
+  severity smallint,
+  is_public boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+comment on table uk_aq_history.status_codes is
+  'Canonical status dictionary for history observations, intended for QA scripts and future validation, not ingest writes.';
+comment on column uk_aq_history.status_codes.status_id is
+  'Canonical smallint status identifier for QA scripts and future validation, not ingest writes.';
+comment on column uk_aq_history.status_codes.code is
+  'Stable canonical status code used for QA scripts and future validation, not ingest writes.';
+comment on column uk_aq_history.status_codes.description is
+  'Optional human-readable status description for QA scripts and future validation, not ingest writes.';
+comment on column uk_aq_history.status_codes.severity is
+  'Optional canonical severity ranking for QA scripts and future validation, not ingest writes.';
+comment on column uk_aq_history.status_codes.is_public is
+  'Flag for whether the canonical status is suitable for public-facing use in QA/validation outputs; not ingest writes.';
+comment on column uk_aq_history.status_codes.created_at is
+  'Creation timestamp for canonical status dictionary rows maintained for QA scripts and future validation, not ingest writes.';
+
 create table if not exists uk_aq_history.observations (
   connector_id integer not null,
   timeseries_id integer not null,
   observed_at timestamptz not null,
   value double precision,
-  created_at timestamptz not null default now()
-) partition by range (observed_at);
+  status_id smallint,
+  created_at timestamptz not null default now(),
+  constraint uk_aq_history_observations_status_id_fkey
+    foreign key (status_id)
+    references uk_aq_history.status_codes(status_id)
+    on delete set null,
+  primary key (connector_id, timeseries_id, observed_at)
+);
 
-create table if not exists uk_aq_history.observations_default
-  partition of uk_aq_history.observations default;
+alter table if exists uk_aq_history.observations
+  add column if not exists status_id smallint;
 
-comment on table uk_aq_history.observations_default is
-  'Catch-all/default partition for out-of-range rows. Non-zero rows are treated as a maintenance alert signal.';
-
-create index if not exists uk_aq_history_observations_default_observed_at_brin
-  on uk_aq_history.observations_default using brin (observed_at);
+alter table if exists uk_aq_history.observations
+  drop column if exists status;
 
 do $$
-declare
-  v_today_utc date := (now() at time zone 'UTC')::date;
-  v_day date;
-  v_partition_name text;
 begin
-  for v_day in
-    select generate_series(v_today_utc - 2, v_today_utc + 7, interval '1 day')::date
-  loop
-    v_partition_name := format('observations_%s', to_char(v_day, 'YYYYMMDD'));
-
-    execute format(
-      'create table if not exists uk_aq_history.%I '
-      'partition of uk_aq_history.observations '
-      'for values from (%L) to (%L)',
-      v_partition_name,
-      format('%s 00:00:00+00', v_day),
-      format('%s 00:00:00+00', v_day + 1)
-    );
-
-    execute format(
-      'create index if not exists %I on uk_aq_history.%I using brin (observed_at)',
-      v_partition_name || '_observed_at_brin_idx',
-      v_partition_name
-    );
-
-    if v_day between (v_today_utc - 2) and v_today_utc then
-      execute format(
-        'create unique index if not exists %I on uk_aq_history.%I (connector_id, timeseries_id, observed_at)',
-        v_partition_name || '_hot_key_uidx',
-        v_partition_name
-      );
-    else
-      execute format(
-        'drop index if exists uk_aq_history.%I',
-        v_partition_name || '_hot_key_uidx'
-      );
-    end if;
-  end loop;
+  if not exists (
+    select 1
+    from pg_constraint c
+    join pg_namespace n on n.oid = c.connamespace
+    where n.nspname = 'uk_aq_history'
+      and c.conname = 'uk_aq_history_observations_status_id_fkey'
+  ) then
+    execute
+      'alter table uk_aq_history.observations '
+      'add constraint uk_aq_history_observations_status_id_fkey '
+      'foreign key (status_id) '
+      'references uk_aq_history.status_codes(status_id) '
+      'on delete set null';
+  end if;
 end $$;
+
+drop index if exists uk_aq_history.uk_aq_history_observations_series_observed_idx;
+
+create index if not exists uk_aq_history_observations_observed_at_brin
+  on uk_aq_history.observations using brin (observed_at);
+
+alter table if exists uk_aq_history.status_codes enable row level security;
 
 create table if not exists uk_aq_raw.history_rpc_metrics_minute (
   bucket_minute timestamptz not null,
@@ -132,65 +143,39 @@ begin
   v_input_rows := jsonb_array_length(rows);
   v_payload_bytes := pg_column_size(rows);
 
-  with input_rows as (
-    select distinct on (
-      input.connector_id,
-      input.timeseries_id,
-      input.observed_at
-    )
-      input.connector_id,
-      input.timeseries_id,
-      input.observed_at,
-      input.value
-    from jsonb_to_recordset(rows) as input(
-      connector_id integer,
-      timeseries_id integer,
-      observed_at timestamptz,
-      value double precision,
-      value_float8_hex text
-    )
-    where input.connector_id is not null
-      and input.timeseries_id is not null
-      and input.observed_at is not null
-    order by
-      input.connector_id,
-      input.timeseries_id,
-      input.observed_at
-  ),
-  updated as (
-    update uk_aq_history.observations o
-    set value = i.value
-    from input_rows i
-    where o.connector_id = i.connector_id
-      and o.timeseries_id = i.timeseries_id
-      and o.observed_at = i.observed_at
-      and o.value is distinct from i.value
-    returning 1
-  ),
-  inserted as (
-    insert into uk_aq_history.observations (
-      connector_id,
-      timeseries_id,
-      observed_at,
-      value
-    )
-    select
-      i.connector_id,
-      i.timeseries_id,
-      i.observed_at,
-      i.value
-    from input_rows i
-    left join uk_aq_history.observations o
-      on o.connector_id = i.connector_id
-     and o.timeseries_id = i.timeseries_id
-     and o.observed_at = i.observed_at
-    where o.connector_id is null
-    returning 1
+  insert into uk_aq_history.observations (
+    connector_id,
+    timeseries_id,
+    observed_at,
+    value,
+    status_id
   )
   select
-    coalesce((select count(*) from updated), 0)
-    + coalesce((select count(*) from inserted), 0)
-  into v_count;
+    input.connector_id,
+    input.timeseries_id,
+    input.observed_at,
+    input.value,
+    input.status_id
+  from jsonb_to_recordset(rows) as input(
+    connector_id integer,
+    timeseries_id integer,
+    observed_at timestamptz,
+    value double precision,
+    value_float8_hex text,
+    status_id smallint
+  )
+  where input.connector_id is not null
+    and input.timeseries_id is not null
+    and input.observed_at is not null
+  on conflict (connector_id, timeseries_id, observed_at)
+  do update set
+    value = excluded.value,
+    status_id = excluded.status_id
+  where
+    uk_aq_history.observations.value is distinct from excluded.value
+    or uk_aq_history.observations.status_id is distinct from excluded.status_id;
+
+  get diagnostics v_count = row_count;
 
   v_duration_ms := greatest(
     0,
@@ -258,6 +243,24 @@ grant execute on function uk_aq_public.uk_aq_rpc_history_observations_upsert(jso
 
 revoke all on function uk_aq_public.uk_aq_rpc_database_size_bytes() from public;
 grant execute on function uk_aq_public.uk_aq_rpc_database_size_bytes() to service_role;
+
+revoke all on table uk_aq_history.status_codes from public;
+revoke all on table uk_aq_history.status_codes from service_role;
+do $$
+declare
+  v_role text;
+begin
+  for v_role in
+    select rolname
+    from pg_roles
+    where rolname ilike '%ingest%'
+  loop
+    execute format(
+      'revoke all on table uk_aq_history.status_codes from %I',
+      v_role
+    );
+  end loop;
+end $$;
 
 grant usage on schema uk_aq_history to service_role;
 grant usage on schema uk_aq_public to service_role;
