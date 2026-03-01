@@ -73,6 +73,33 @@ grant execute on function uk_aq_public.uk_aq_la_hex_rpc(
 ) to service_role;
 -- uk_aq_latest RPC for read-only access (Edge function backing).
 
+do $$
+declare
+  v_fn record;
+begin
+  for v_fn in
+    select
+      p.proname,
+      pg_get_function_identity_arguments(p.oid) as identity_args
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'uk_aq_public'
+      and p.proname = any(array[
+        'uk_aq_latest_rpc',
+        'uk_aq_timeseries_rpc',
+        'uk_aq_stations_rpc',
+        'uk_aq_surbiton_latest_rpc'
+      ])
+  loop
+    execute format(
+      'drop function if exists uk_aq_public.%I(%s)',
+      v_fn.proname,
+      v_fn.identity_args
+    );
+  end loop;
+end
+$$;
+
 drop function if exists uk_aq_public.uk_aq_latest_rpc(
   text,
   text,
