@@ -9,7 +9,8 @@ create table if not exists uk_aq_history.observations (
   connector_id integer not null,
   timeseries_id integer not null,
   observed_at timestamptz not null,
-  value double precision
+  value double precision,
+  created_at timestamptz not null default now()
 ) partition by range (observed_at);
 
 create table if not exists uk_aq_history.observations_default

@@ -47,7 +47,8 @@ begin
       connector_id integer not null,
       timeseries_id integer not null,
       observed_at timestamptz not null,
-      value double precision
+      value double precision,
+      created_at timestamptz not null default now()
     ) partition by range (observed_at)
   $ddl$;
 
@@ -95,13 +96,15 @@ insert into uk_aq_history.observations_new (
   connector_id,
   timeseries_id,
   observed_at,
-  value
+  value,
+  created_at
 )
 select
   o.connector_id::integer,
   o.timeseries_id::integer,
   o.observed_at,
-  o.value
+  o.value,
+  coalesce(o.created_at, now())
 from uk_aq_history.observations o;
 
 create temporary table _history_day_counts_old on commit drop as
