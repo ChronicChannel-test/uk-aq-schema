@@ -17,3 +17,6 @@ History-only observations table for long-term retention outside the main `uk_aq_
 ## Notes
 - RLS is service_role only (intended for Edge Functions / server-side use).
 - Designed for append-only raw-history retention with no aggregation/downsampling.
+- `uk_aq_public.uk_aq_rpc_history_observations_upsert` is partition-aware:
+  - Hot partitions with `<partition>_hot_key_uidx` use direct partition `INSERT ... ON CONFLICT ... DO UPDATE`.
+  - Non-hot or missing partitions fall back to update-then-insert against `uk_aq_history.observations`.

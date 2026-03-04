@@ -47,6 +47,9 @@ This document summarizes the schema defined in `schemas/uk_air_quality_schema.sq
 - `uk_aq_history.observations`: history-only fact table keyed by integer internal ids (`connector_id`, `timeseries_id`, `observed_at`) with `value` (no `status_id`).
 - Partitioned by UTC day range on `observed_at`, with `uk_aq_history.observations_default` as the out-of-range catch-all partition.
 - Hot partition index policy: UTC today plus previous 2 UTC days keep unique btree key `(connector_id, timeseries_id, observed_at)` plus BRIN on `observed_at`; cold partitions keep BRIN only.
+- History upsert RPC (`uk_aq_public.uk_aq_rpc_history_observations_upsert`) routes writes by UTC day:
+  - hot partitions use direct partition `INSERT ... ON CONFLICT ... DO UPDATE`;
+  - non-hot/missing partitions use update-then-insert fallback on the partitioned parent.
 - RLS: service_role only (intended for Edge Functions / server-side access).
 - The history schema is additive only; no existing tables are moved out of `public` yet.
 
