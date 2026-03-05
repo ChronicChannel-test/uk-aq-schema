@@ -1,6 +1,7 @@
 -- uk_aq_raw schema (split from uk_air_quality_schema.sql)
 create schema if not exists uk_aq_raw;
 create schema if not exists uk_aq_public;
+create schema if not exists uk_aq_ops;
 set search_path = uk_aq_raw, uk_aq_core, public;
 
 create table if not exists uk_air_sos_site_register (
@@ -187,11 +188,12 @@ create table if not exists observation_rpc_metrics_minute (
 create index if not exists observation_rpc_metrics_minute_endpoint_idx
   on observation_rpc_metrics_minute (endpoint, bucket_minute desc);
 
-create table if not exists db_size_metrics_hourly (
+create table if not exists uk_aq_ops.db_size_metrics_hourly (
   bucket_hour timestamptz not null,
   database_label text not null check (database_label in ('ingestdb', 'historydb', 'aggdailydb')),
   database_name text not null,
   size_bytes bigint not null check (size_bytes >= 0),
+  oldest_observed_at timestamptz,
   source text not null default 'uk_aq_db_size_logger_cloud_run',
   recorded_at timestamptz not null default now(),
   created_at timestamptz not null default now(),
@@ -200,7 +202,7 @@ create table if not exists db_size_metrics_hourly (
 );
 
 create index if not exists db_size_metrics_hourly_database_label_idx
-  on db_size_metrics_hourly (database_label, bucket_hour desc);
+  on uk_aq_ops.db_size_metrics_hourly (database_label, bucket_hour desc);
 
 create or replace view uk_aq_public.uk_aq_observation_rpc_metrics_minute as
 select
@@ -224,8 +226,9 @@ select
   source,
   recorded_at,
   created_at,
-  updated_at
-from uk_aq_raw.db_size_metrics_hourly;
+  updated_at,
+  oldest_observed_at
+from uk_aq_ops.db_size_metrics_hourly;
 alter view if exists uk_aq_public.uk_aq_db_size_metrics_hourly set (security_invoker = true);
 
 create unique index if not exists stations_connector_ref_uidx
@@ -296,7 +299,8 @@ begin
         'uk_aq_rpc_error_log_insert',
         'uk_aq_rpc_database_size_bytes',
         'uk_aq_rpc_db_size_metric_upsert',
-        'uk_aq_rpc_db_size_metric_cleanup'
+        'uk_aq_rpc_db_size_metric_cleanup',
+        'uk_aq_rpc_r2_backup_window'
       ])
   loop
     execute format(
@@ -1251,6 +1255,7 @@ create or replace function uk_aq_public.uk_aq_rpc_database_size_bytes()
 returns table (
   database_name text,
   size_bytes bigint,
+  oldest_observed_at timestamptz,
   sampled_at timestamptz
 )
 language plpgsql
@@ -1266,6 +1271,7 @@ begin
   select
     current_database()::text as database_name,
     pg_database_size(current_database())::bigint as size_bytes,
+    (select min(o.observed_at) from uk_aq_core.observations o) as oldest_observed_at,
     now() as sampled_at;
 end;
 $$;
@@ -1274,13 +1280,14 @@ create or replace function uk_aq_public.uk_aq_rpc_db_size_metric_upsert(
   p_database_label text,
   p_database_name text,
   p_size_bytes bigint,
+  p_oldest_observed_at timestamptz default null,
   p_recorded_at timestamptz default now(),
   p_source text default null
 )
 returns table (rows_upserted int)
 language plpgsql
 security definer
-set search_path = uk_aq_raw, public, pg_catalog
+set search_path = uk_aq_ops, public, pg_catalog
 as $$
 declare
   v_bucket_hour timestamptz;
@@ -1306,11 +1313,12 @@ begin
   v_bucket_hour := date_trunc('hour', coalesce(p_recorded_at, now()));
   v_source := coalesce(nullif(btrim(p_source), ''), 'uk_aq_db_size_logger_cloud_run');
 
-  insert into uk_aq_raw.db_size_metrics_hourly (
+  insert into uk_aq_ops.db_size_metrics_hourly (
     bucket_hour,
     database_label,
     database_name,
     size_bytes,
+    oldest_observed_at,
     source,
     recorded_at,
     updated_at
@@ -1320,6 +1328,7 @@ begin
     p_database_label,
     p_database_name,
     p_size_bytes,
+    p_oldest_observed_at,
     v_source,
     coalesce(p_recorded_at, now()),
     now()
@@ -1327,6 +1336,7 @@ begin
   on conflict (bucket_hour, database_label) do update set
     database_name = excluded.database_name,
     size_bytes = excluded.size_bytes,
+    oldest_observed_at = excluded.oldest_observed_at,
     source = excluded.source,
     recorded_at = excluded.recorded_at,
     updated_at = now();
@@ -1342,7 +1352,7 @@ create or replace function uk_aq_public.uk_aq_rpc_db_size_metric_cleanup(
 returns table (rows_deleted bigint)
 language plpgsql
 security definer
-set search_path = uk_aq_raw, public, pg_catalog
+set search_path = uk_aq_ops, public, pg_catalog
 as $$
 declare
   v_days integer;
@@ -1354,11 +1364,116 @@ begin
 
   v_days := greatest(1, least(coalesce(p_retention_days, 120), 3650));
 
-  delete from uk_aq_raw.db_size_metrics_hourly
+  delete from uk_aq_ops.db_size_metrics_hourly
   where bucket_hour < now() - make_interval(days => v_days);
 
   get diagnostics v_rows = row_count;
   return query select v_rows;
+end;
+$$;
+
+create extension if not exists pg_cron with schema extensions;
+
+create or replace function uk_aq_ops.uk_aq_db_size_metric_sample_local(
+  p_retention_days integer default 120,
+  p_recorded_at timestamptz default now(),
+  p_source text default 'uk_aq_db_size_logger_pg_cron'
+)
+returns table (
+  rows_upserted int,
+  rows_deleted bigint
+)
+language plpgsql
+security definer
+set search_path = uk_aq_ops, uk_aq_core, public, pg_catalog
+as $$
+declare
+  v_days integer;
+  v_bucket_hour timestamptz;
+  v_rows_upserted int := 0;
+  v_rows_deleted bigint := 0;
+  v_source text;
+begin
+  v_days := greatest(1, least(coalesce(p_retention_days, 120), 3650));
+  v_bucket_hour := date_trunc('hour', coalesce(p_recorded_at, now()));
+  v_source := coalesce(nullif(btrim(p_source), ''), 'uk_aq_db_size_logger_pg_cron');
+
+  insert into uk_aq_ops.db_size_metrics_hourly (
+    bucket_hour,
+    database_label,
+    database_name,
+    size_bytes,
+    oldest_observed_at,
+    source,
+    recorded_at,
+    updated_at
+  )
+  values (
+    v_bucket_hour,
+    'ingestdb',
+    current_database()::text,
+    pg_database_size(current_database())::bigint,
+    (select min(o.observed_at) from uk_aq_core.observations o),
+    v_source,
+    coalesce(p_recorded_at, now()),
+    now()
+  )
+  on conflict (bucket_hour, database_label) do update set
+    database_name = excluded.database_name,
+    size_bytes = excluded.size_bytes,
+    oldest_observed_at = excluded.oldest_observed_at,
+    source = excluded.source,
+    recorded_at = excluded.recorded_at,
+    updated_at = now();
+
+  get diagnostics v_rows_upserted = row_count;
+
+  delete from uk_aq_ops.db_size_metrics_hourly
+  where bucket_hour < now() - make_interval(days => v_days);
+
+  get diagnostics v_rows_deleted = row_count;
+
+  return query select v_rows_upserted, v_rows_deleted;
+end;
+$$;
+
+select cron.unschedule(jobid)
+from cron.job
+where jobname = 'uk_aq_ingest_db_size_metrics_hourly';
+
+select cron.schedule(
+  'uk_aq_ingest_db_size_metrics_hourly',
+  '2 * * * *',
+  $$select * from uk_aq_ops.uk_aq_db_size_metric_sample_local();$$
+);
+
+create or replace function uk_aq_public.uk_aq_rpc_r2_backup_window()
+returns table (
+  min_day_utc date,
+  max_day_utc date
+)
+language plpgsql
+security definer
+set search_path = uk_aq_ops, public, pg_catalog
+as $$
+begin
+  if auth.role() <> 'service_role' then
+    raise exception 'service_role required';
+  end if;
+
+  if to_regclass('uk_aq_ops.prune_day_gates') is null then
+    return query select null::date, null::date;
+    return;
+  end if;
+
+  return query
+  select
+    min(day_utc)::date as min_day_utc,
+    max(day_utc)::date as max_day_utc
+  from uk_aq_ops.prune_day_gates
+  where backup_done is true
+    and nullif(btrim(backup_manifest_key), '') is not null
+    and backup_completed_at is not null;
 end;
 $$;
 
@@ -1433,10 +1548,14 @@ grant execute on function uk_aq_public.uk_aq_rpc_error_log_insert(jsonb) to serv
 revoke all on function uk_aq_public.uk_aq_rpc_database_size_bytes() from public;
 grant execute on function uk_aq_public.uk_aq_rpc_database_size_bytes() to service_role;
 
+grant usage on schema uk_aq_ops to service_role;
+grant all on table uk_aq_ops.db_size_metrics_hourly to service_role;
+
 revoke all on function uk_aq_public.uk_aq_rpc_db_size_metric_upsert(
   text,
   text,
   bigint,
+  timestamptz,
   timestamptz,
   text
 ) from public;
@@ -1445,11 +1564,18 @@ grant execute on function uk_aq_public.uk_aq_rpc_db_size_metric_upsert(
   text,
   bigint,
   timestamptz,
+  timestamptz,
   text
 ) to service_role;
 
 revoke all on function uk_aq_public.uk_aq_rpc_db_size_metric_cleanup(integer) from public;
 grant execute on function uk_aq_public.uk_aq_rpc_db_size_metric_cleanup(integer) to service_role;
+
+revoke all on function uk_aq_ops.uk_aq_db_size_metric_sample_local(integer, timestamptz, text) from public;
+grant execute on function uk_aq_ops.uk_aq_db_size_metric_sample_local(integer, timestamptz, text) to service_role;
+
+revoke all on function uk_aq_public.uk_aq_rpc_r2_backup_window() from public;
+grant execute on function uk_aq_public.uk_aq_rpc_r2_backup_window() to service_role;
 
 revoke all on uk_aq_public.uk_aq_observation_rpc_metrics_minute from public;
 grant select on uk_aq_public.uk_aq_observation_rpc_metrics_minute to authenticated;

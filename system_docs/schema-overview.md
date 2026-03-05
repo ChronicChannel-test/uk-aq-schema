@@ -65,6 +65,24 @@ This document summarizes the schema defined in `schemas/uk_air_quality_schema.sq
 ## Guideline limits
 - `uk_aq_guidelines`: pollutant guideline limits (WHO/UK/EU, etc.) with `pollutant`, `averaging_period_label`, `averaging_period_interval`, `level_label`, `limit_value`, `uom`, and optional `source`/`notes`/validity dates.
 
+## AggDaily AQI aggregates
+- AggDaily DB mirrors `uk_aq_core` metadata needed for joins and stores derived AQI outputs in `uk_aq_aggdaily`.
+- Reference tables:
+  - `aqi_standard_versions`: DAQI/EAQI version registry with validity dates.
+  - `aqi_breakpoints`: range-based pollutant thresholds by standard/version/averaging metric.
+- Station outputs:
+  - `station_aqi_hourly`: station-hour concentrations, completeness metrics, and pollutant-specific DAQI/EAQI `index_level` + `index_band`.
+  - `station_aqi_daily`: per-day level distributions (`index_level_hour_counts`) by station, AQI standard, and pollutant.
+  - `station_aqi_monthly`: monthly level distributions by station, AQI standard, and pollutant.
+- Ops telemetry:
+  - `uk_aq_ops.aqi_compute_runs`: run-mode/window/change metrics for fast/short/deep/backfill AQI jobs.
+- AQI runtime RPCs in `uk_aq_public` (service-role):
+  - `uk_aq_rpc_aqi_breakpoints_active`
+  - `uk_aq_rpc_station_aqi_hourly_upsert`
+  - `uk_aq_rpc_station_aqi_rollups_refresh`
+  - `uk_aq_rpc_aqi_compute_run_log`
+  - `uk_aq_rpc_aqi_compute_runs_cleanup`
+
 ## RLS (Row Level Security)
 - RLS enabled on all domain tables (not on system tables like spatial_ref_sys), including `station_metadata` and `station_network_memberships`.
 - Policies (idempotent via DO block):
