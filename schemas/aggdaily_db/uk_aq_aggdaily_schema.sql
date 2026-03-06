@@ -410,7 +410,7 @@ begin
       select coalesce(sum(pg_database_size(pg_database.datname)), 0)::bigint
       from pg_database
     ),
-    null::timestamptz,
+    (select min(sah.timestamp_hour_utc) from uk_aq_aggdaily.station_aqi_hourly sah),
     v_source,
     coalesce(p_recorded_at, now()),
     now()
