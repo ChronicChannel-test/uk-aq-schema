@@ -162,7 +162,10 @@ begin
     v_bucket_hour,
     'historydb',
     current_database()::text,
-    pg_database_size(current_database())::bigint,
+    (
+      select coalesce(sum(pg_database_size(pg_database.datname)), 0)::bigint
+      from pg_database
+    ),
     (select min(o.observed_at) from uk_aq_history.observations o),
     v_source,
     coalesce(p_recorded_at, now()),
@@ -216,7 +219,10 @@ begin
   return query
   select
     current_database()::text as database_name,
-    pg_database_size(current_database())::bigint as size_bytes,
+    (
+      select coalesce(sum(pg_database_size(pg_database.datname)), 0)::bigint
+      from pg_database
+    ) as size_bytes,
     (select min(o.observed_at) from uk_aq_history.observations o) as oldest_observed_at,
     now() as sampled_at;
 end;

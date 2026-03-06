@@ -1228,7 +1228,6 @@ declare
   v_source_start timestamptz;
   v_source_end timestamptz;
   v_reference_end timestamptz;
-  v_effective_date date;
   v_source_rows integer := 0;
   v_rows_upserted integer := 0;
   v_station_hours_changed integer := 0;
@@ -1251,7 +1250,6 @@ begin
   v_source_start := v_start_exclusive - interval '23 hours';
   v_source_end := v_end_inclusive;
   v_reference_end := date_trunc('hour', coalesce(p_reference_hour_end_utc, v_end_inclusive));
-  v_effective_date := (v_reference_end at time zone 'UTC')::date;
 
   with source_rows as (
     with raw as (
@@ -1432,56 +1430,8 @@ begin
       case
         when t.pm10_hourly_sample_count_raw is null then null
         else least(32767, greatest(0, t.pm10_hourly_sample_count_raw))::smallint
-      end as pm10_hourly_sample_count,
-      daqi_no2.index_level as daqi_no2_index_level,
-      daqi_pm25.index_level as daqi_pm25_rolling24h_index_level,
-      daqi_pm10.index_level as daqi_pm10_rolling24h_index_level,
-      eaqi_no2.index_level as eaqi_no2_index_level,
-      eaqi_pm25.index_level as eaqi_pm25_index_level,
-      eaqi_pm10.index_level as eaqi_pm10_index_level
+      end as pm10_hourly_sample_count
     from target_hours t
-    left join lateral uk_aq_aggdaily.uk_aq_aqi_index_lookup(
-      'daqi',
-      'no2',
-      'hourly_mean',
-      t.no2_hourly_mean_ugm3,
-      v_effective_date
-    ) daqi_no2 on true
-    left join lateral uk_aq_aggdaily.uk_aq_aqi_index_lookup(
-      'daqi',
-      'pm25',
-      'rolling_24h_mean',
-      t.pm25_rolling24h_mean_ugm3,
-      v_effective_date
-    ) daqi_pm25 on true
-    left join lateral uk_aq_aggdaily.uk_aq_aqi_index_lookup(
-      'daqi',
-      'pm10',
-      'rolling_24h_mean',
-      t.pm10_rolling24h_mean_ugm3,
-      v_effective_date
-    ) daqi_pm10 on true
-    left join lateral uk_aq_aggdaily.uk_aq_aqi_index_lookup(
-      'eaqi',
-      'no2',
-      'hourly_mean',
-      t.no2_hourly_mean_ugm3,
-      v_effective_date
-    ) eaqi_no2 on true
-    left join lateral uk_aq_aggdaily.uk_aq_aqi_index_lookup(
-      'eaqi',
-      'pm25',
-      'hourly_mean',
-      t.pm25_hourly_mean_ugm3,
-      v_effective_date
-    ) eaqi_pm25 on true
-    left join lateral uk_aq_aggdaily.uk_aq_aqi_index_lookup(
-      'eaqi',
-      'pm10',
-      'hourly_mean',
-      t.pm10_hourly_mean_ugm3,
-      v_effective_date
-    ) eaqi_pm10 on true
     where
       t.no2_hourly_mean_ugm3 is not null
       or t.pm25_hourly_mean_ugm3 is not null
@@ -1507,13 +1457,7 @@ begin
           e.pm10_rolling24h_mean_ugm3,
           e.no2_hourly_sample_count,
           e.pm25_hourly_sample_count,
-          e.pm10_hourly_sample_count,
-          e.daqi_no2_index_level,
-          e.daqi_pm25_rolling24h_index_level,
-          e.daqi_pm10_rolling24h_index_level,
-          e.eaqi_no2_index_level,
-          e.eaqi_pm25_index_level,
-          e.eaqi_pm10_index_level
+          e.pm10_hourly_sample_count
         )
         is distinct from
         (
@@ -1524,13 +1468,7 @@ begin
           c.pm10_rolling24h_mean_ugm3,
           c.no2_hourly_sample_count,
           c.pm25_hourly_sample_count,
-          c.pm10_hourly_sample_count,
-          c.daqi_no2_index_level,
-          c.daqi_pm25_rolling24h_index_level,
-          c.daqi_pm10_rolling24h_index_level,
-          c.eaqi_no2_index_level,
-          c.eaqi_pm25_index_level,
-          c.eaqi_pm10_index_level
+          c.pm10_hourly_sample_count
         )
       )
   ),
@@ -1546,12 +1484,6 @@ begin
       no2_hourly_sample_count,
       pm25_hourly_sample_count,
       pm10_hourly_sample_count,
-      daqi_no2_index_level,
-      daqi_pm25_rolling24h_index_level,
-      daqi_pm10_rolling24h_index_level,
-      eaqi_no2_index_level,
-      eaqi_pm25_index_level,
-      eaqi_pm10_index_level,
       updated_at
     )
     select
@@ -1565,12 +1497,6 @@ begin
       c.no2_hourly_sample_count,
       c.pm25_hourly_sample_count,
       c.pm10_hourly_sample_count,
-      c.daqi_no2_index_level,
-      c.daqi_pm25_rolling24h_index_level,
-      c.daqi_pm10_rolling24h_index_level,
-      c.eaqi_no2_index_level,
-      c.eaqi_pm25_index_level,
-      c.eaqi_pm10_index_level,
       now()
     from changed c
     on conflict (station_id, timestamp_hour_utc) do update
@@ -1583,12 +1509,6 @@ begin
       no2_hourly_sample_count = excluded.no2_hourly_sample_count,
       pm25_hourly_sample_count = excluded.pm25_hourly_sample_count,
       pm10_hourly_sample_count = excluded.pm10_hourly_sample_count,
-      daqi_no2_index_level = excluded.daqi_no2_index_level,
-      daqi_pm25_rolling24h_index_level = excluded.daqi_pm25_rolling24h_index_level,
-      daqi_pm10_rolling24h_index_level = excluded.daqi_pm10_rolling24h_index_level,
-      eaqi_no2_index_level = excluded.eaqi_no2_index_level,
-      eaqi_pm25_index_level = excluded.eaqi_pm25_index_level,
-      eaqi_pm10_index_level = excluded.eaqi_pm10_index_level,
       updated_at = now()
     where
       (
@@ -1599,13 +1519,7 @@ begin
         uk_aq_aggdaily.station_aqi_hourly_helper.pm10_rolling24h_mean_ugm3,
         uk_aq_aggdaily.station_aqi_hourly_helper.no2_hourly_sample_count,
         uk_aq_aggdaily.station_aqi_hourly_helper.pm25_hourly_sample_count,
-        uk_aq_aggdaily.station_aqi_hourly_helper.pm10_hourly_sample_count,
-        uk_aq_aggdaily.station_aqi_hourly_helper.daqi_no2_index_level,
-        uk_aq_aggdaily.station_aqi_hourly_helper.daqi_pm25_rolling24h_index_level,
-        uk_aq_aggdaily.station_aqi_hourly_helper.daqi_pm10_rolling24h_index_level,
-        uk_aq_aggdaily.station_aqi_hourly_helper.eaqi_no2_index_level,
-        uk_aq_aggdaily.station_aqi_hourly_helper.eaqi_pm25_index_level,
-        uk_aq_aggdaily.station_aqi_hourly_helper.eaqi_pm10_index_level
+        uk_aq_aggdaily.station_aqi_hourly_helper.pm10_hourly_sample_count
       )
       is distinct from
       (
@@ -1616,13 +1530,7 @@ begin
         excluded.pm10_rolling24h_mean_ugm3,
         excluded.no2_hourly_sample_count,
         excluded.pm25_hourly_sample_count,
-        excluded.pm10_hourly_sample_count,
-        excluded.daqi_no2_index_level,
-        excluded.daqi_pm25_rolling24h_index_level,
-        excluded.daqi_pm10_rolling24h_index_level,
-        excluded.eaqi_no2_index_level,
-        excluded.eaqi_pm25_index_level,
-        excluded.eaqi_pm10_index_level
+        excluded.pm10_hourly_sample_count
       )
     returning
       station_id,
@@ -1677,13 +1585,7 @@ returns table (
   pm10_rolling24h_mean_ugm3 double precision,
   no2_hourly_sample_count smallint,
   pm25_hourly_sample_count smallint,
-  pm10_hourly_sample_count smallint,
-  daqi_no2_index_level smallint,
-  daqi_pm25_rolling24h_index_level smallint,
-  daqi_pm10_rolling24h_index_level smallint,
-  eaqi_no2_index_level smallint,
-  eaqi_pm25_index_level smallint,
-  eaqi_pm10_index_level smallint
+  pm10_hourly_sample_count smallint
 )
 language plpgsql
 security definer
@@ -1718,13 +1620,7 @@ begin
     h.pm10_rolling24h_mean_ugm3,
     h.no2_hourly_sample_count,
     h.pm25_hourly_sample_count,
-    h.pm10_hourly_sample_count,
-    h.daqi_no2_index_level,
-    h.daqi_pm25_rolling24h_index_level,
-    h.daqi_pm10_rolling24h_index_level,
-    h.eaqi_no2_index_level,
-    h.eaqi_pm25_index_level,
-    h.eaqi_pm10_index_level
+    h.pm10_hourly_sample_count
   from uk_aq_aggdaily.station_aqi_hourly_helper h
   where h.timestamp_hour_utc > (v_start_exclusive - interval '1 hour')
     and h.timestamp_hour_utc <= (v_end_inclusive - interval '1 hour')

@@ -1,4 +1,5 @@
--- AggDaily station AQI hourly: remove redundant columns and rename DAQI PM rolling-24h index fields.
+-- AggDaily station AQI hourly: remove redundant columns, rename DAQI PM rolling-24h index fields,
+-- and compute AQI index levels inside AggDaily hourly upsert from mean inputs.
 
 drop view if exists uk_aq_public.uk_aq_station_aqi_hourly;
 
@@ -121,6 +122,7 @@ declare
   v_station_hours_changed integer := 0;
   v_station_hours_changed_gt_cutoff integer := 0;
   v_max_changed_lag_hours numeric := null;
+  v_reference_effective_date date := null;
 begin
   if auth.role() <> 'service_role' then
     raise exception 'service_role required';
@@ -134,7 +136,11 @@ begin
     return;
   end if;
 
-  with incoming as (
+  if p_reference_hour is not null then
+    v_reference_effective_date := (p_reference_hour at time zone 'UTC')::date;
+  end if;
+
+  with incoming_base as (
     select
       r.station_id,
       date_trunc('hour', r.timestamp_hour_utc) as timestamp_hour_utc,
@@ -145,13 +151,7 @@ begin
       r.pm10_rolling24h_mean_ugm3,
       r.no2_hourly_sample_count,
       r.pm25_hourly_sample_count,
-      r.pm10_hourly_sample_count,
-      r.daqi_no2_index_level,
-      r.daqi_pm25_rolling24h_index_level,
-      r.daqi_pm10_rolling24h_index_level,
-      r.eaqi_no2_index_level,
-      r.eaqi_pm25_index_level,
-      r.eaqi_pm10_index_level
+      r.pm10_hourly_sample_count
     from jsonb_to_recordset(p_rows) as r(
       station_id bigint,
       timestamp_hour_utc timestamptz,
@@ -162,16 +162,72 @@ begin
       pm10_rolling24h_mean_ugm3 double precision,
       no2_hourly_sample_count smallint,
       pm25_hourly_sample_count smallint,
-      pm10_hourly_sample_count smallint,
-      daqi_no2_index_level smallint,
-      daqi_pm25_rolling24h_index_level smallint,
-      daqi_pm10_rolling24h_index_level smallint,
-      eaqi_no2_index_level smallint,
-      eaqi_pm25_index_level smallint,
-      eaqi_pm10_index_level smallint
+      pm10_hourly_sample_count smallint
     )
     where r.station_id is not null
       and r.timestamp_hour_utc is not null
+  ),
+  incoming as (
+    select
+      b.station_id,
+      b.timestamp_hour_utc,
+      b.no2_hourly_mean_ugm3,
+      b.pm25_hourly_mean_ugm3,
+      b.pm10_hourly_mean_ugm3,
+      b.pm25_rolling24h_mean_ugm3,
+      b.pm10_rolling24h_mean_ugm3,
+      b.no2_hourly_sample_count,
+      b.pm25_hourly_sample_count,
+      b.pm10_hourly_sample_count,
+      daqi_no2.index_level as daqi_no2_index_level,
+      daqi_pm25.index_level as daqi_pm25_rolling24h_index_level,
+      daqi_pm10.index_level as daqi_pm10_rolling24h_index_level,
+      eaqi_no2.index_level as eaqi_no2_index_level,
+      eaqi_pm25.index_level as eaqi_pm25_index_level,
+      eaqi_pm10.index_level as eaqi_pm10_index_level
+    from incoming_base b
+    left join lateral uk_aq_aggdaily.uk_aq_aqi_index_lookup(
+      'daqi',
+      'no2',
+      'hourly_mean',
+      b.no2_hourly_mean_ugm3,
+      coalesce(v_reference_effective_date, (b.timestamp_hour_utc at time zone 'UTC')::date)
+    ) daqi_no2 on true
+    left join lateral uk_aq_aggdaily.uk_aq_aqi_index_lookup(
+      'daqi',
+      'pm25',
+      'rolling_24h_mean',
+      b.pm25_rolling24h_mean_ugm3,
+      coalesce(v_reference_effective_date, (b.timestamp_hour_utc at time zone 'UTC')::date)
+    ) daqi_pm25 on true
+    left join lateral uk_aq_aggdaily.uk_aq_aqi_index_lookup(
+      'daqi',
+      'pm10',
+      'rolling_24h_mean',
+      b.pm10_rolling24h_mean_ugm3,
+      coalesce(v_reference_effective_date, (b.timestamp_hour_utc at time zone 'UTC')::date)
+    ) daqi_pm10 on true
+    left join lateral uk_aq_aggdaily.uk_aq_aqi_index_lookup(
+      'eaqi',
+      'no2',
+      'hourly_mean',
+      b.no2_hourly_mean_ugm3,
+      coalesce(v_reference_effective_date, (b.timestamp_hour_utc at time zone 'UTC')::date)
+    ) eaqi_no2 on true
+    left join lateral uk_aq_aggdaily.uk_aq_aqi_index_lookup(
+      'eaqi',
+      'pm25',
+      'hourly_mean',
+      b.pm25_hourly_mean_ugm3,
+      coalesce(v_reference_effective_date, (b.timestamp_hour_utc at time zone 'UTC')::date)
+    ) eaqi_pm25 on true
+    left join lateral uk_aq_aggdaily.uk_aq_aqi_index_lookup(
+      'eaqi',
+      'pm10',
+      'hourly_mean',
+      b.pm10_hourly_mean_ugm3,
+      coalesce(v_reference_effective_date, (b.timestamp_hour_utc at time zone 'UTC')::date)
+    ) eaqi_pm10 on true
   ),
   dedup as (
     select distinct on (station_id, timestamp_hour_utc)
@@ -257,7 +313,7 @@ begin
     v_max_changed_lag_hours
   from compared;
 
-  with incoming as (
+  with incoming_base as (
     select
       r.station_id,
       date_trunc('hour', r.timestamp_hour_utc) as timestamp_hour_utc,
@@ -268,13 +324,7 @@ begin
       r.pm10_rolling24h_mean_ugm3,
       r.no2_hourly_sample_count,
       r.pm25_hourly_sample_count,
-      r.pm10_hourly_sample_count,
-      r.daqi_no2_index_level,
-      r.daqi_pm25_rolling24h_index_level,
-      r.daqi_pm10_rolling24h_index_level,
-      r.eaqi_no2_index_level,
-      r.eaqi_pm25_index_level,
-      r.eaqi_pm10_index_level
+      r.pm10_hourly_sample_count
     from jsonb_to_recordset(p_rows) as r(
       station_id bigint,
       timestamp_hour_utc timestamptz,
@@ -285,16 +335,72 @@ begin
       pm10_rolling24h_mean_ugm3 double precision,
       no2_hourly_sample_count smallint,
       pm25_hourly_sample_count smallint,
-      pm10_hourly_sample_count smallint,
-      daqi_no2_index_level smallint,
-      daqi_pm25_rolling24h_index_level smallint,
-      daqi_pm10_rolling24h_index_level smallint,
-      eaqi_no2_index_level smallint,
-      eaqi_pm25_index_level smallint,
-      eaqi_pm10_index_level smallint
+      pm10_hourly_sample_count smallint
     )
     where r.station_id is not null
       and r.timestamp_hour_utc is not null
+  ),
+  incoming as (
+    select
+      b.station_id,
+      b.timestamp_hour_utc,
+      b.no2_hourly_mean_ugm3,
+      b.pm25_hourly_mean_ugm3,
+      b.pm10_hourly_mean_ugm3,
+      b.pm25_rolling24h_mean_ugm3,
+      b.pm10_rolling24h_mean_ugm3,
+      b.no2_hourly_sample_count,
+      b.pm25_hourly_sample_count,
+      b.pm10_hourly_sample_count,
+      daqi_no2.index_level as daqi_no2_index_level,
+      daqi_pm25.index_level as daqi_pm25_rolling24h_index_level,
+      daqi_pm10.index_level as daqi_pm10_rolling24h_index_level,
+      eaqi_no2.index_level as eaqi_no2_index_level,
+      eaqi_pm25.index_level as eaqi_pm25_index_level,
+      eaqi_pm10.index_level as eaqi_pm10_index_level
+    from incoming_base b
+    left join lateral uk_aq_aggdaily.uk_aq_aqi_index_lookup(
+      'daqi',
+      'no2',
+      'hourly_mean',
+      b.no2_hourly_mean_ugm3,
+      coalesce(v_reference_effective_date, (b.timestamp_hour_utc at time zone 'UTC')::date)
+    ) daqi_no2 on true
+    left join lateral uk_aq_aggdaily.uk_aq_aqi_index_lookup(
+      'daqi',
+      'pm25',
+      'rolling_24h_mean',
+      b.pm25_rolling24h_mean_ugm3,
+      coalesce(v_reference_effective_date, (b.timestamp_hour_utc at time zone 'UTC')::date)
+    ) daqi_pm25 on true
+    left join lateral uk_aq_aggdaily.uk_aq_aqi_index_lookup(
+      'daqi',
+      'pm10',
+      'rolling_24h_mean',
+      b.pm10_rolling24h_mean_ugm3,
+      coalesce(v_reference_effective_date, (b.timestamp_hour_utc at time zone 'UTC')::date)
+    ) daqi_pm10 on true
+    left join lateral uk_aq_aggdaily.uk_aq_aqi_index_lookup(
+      'eaqi',
+      'no2',
+      'hourly_mean',
+      b.no2_hourly_mean_ugm3,
+      coalesce(v_reference_effective_date, (b.timestamp_hour_utc at time zone 'UTC')::date)
+    ) eaqi_no2 on true
+    left join lateral uk_aq_aggdaily.uk_aq_aqi_index_lookup(
+      'eaqi',
+      'pm25',
+      'hourly_mean',
+      b.pm25_hourly_mean_ugm3,
+      coalesce(v_reference_effective_date, (b.timestamp_hour_utc at time zone 'UTC')::date)
+    ) eaqi_pm25 on true
+    left join lateral uk_aq_aggdaily.uk_aq_aqi_index_lookup(
+      'eaqi',
+      'pm10',
+      'hourly_mean',
+      b.pm10_hourly_mean_ugm3,
+      coalesce(v_reference_effective_date, (b.timestamp_hour_utc at time zone 'UTC')::date)
+    ) eaqi_pm10 on true
   ),
   dedup as (
     select distinct on (station_id, timestamp_hour_utc)

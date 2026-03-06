@@ -1271,7 +1271,10 @@ begin
   return query
   select
     current_database()::text as database_name,
-    pg_database_size(current_database())::bigint as size_bytes,
+    (
+      select coalesce(sum(pg_database_size(pg_database.datname)), 0)::bigint
+      from pg_database
+    ) as size_bytes,
     (select min(o.observed_at) from uk_aq_core.observations o) as oldest_observed_at,
     now() as sampled_at;
 end;
@@ -1413,7 +1416,10 @@ begin
     v_bucket_hour,
     'ingestdb',
     current_database()::text,
-    pg_database_size(current_database())::bigint,
+    (
+      select coalesce(sum(pg_database_size(pg_database.datname)), 0)::bigint
+      from pg_database
+    ),
     (select min(o.observed_at) from uk_aq_core.observations o),
     v_source,
     coalesce(p_recorded_at, now()),
@@ -1642,14 +1648,6 @@ create table if not exists uk_aq_aggdaily.station_aqi_hourly_helper (
   pm25_hourly_sample_count smallint,
   pm10_hourly_sample_count smallint,
 
-
-  daqi_no2_index_level smallint,
-  daqi_pm25_rolling24h_index_level smallint,
-  daqi_pm10_rolling24h_index_level smallint,
-
-  eaqi_no2_index_level smallint,
-  eaqi_pm25_index_level smallint,
-  eaqi_pm10_index_level smallint,
 
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
