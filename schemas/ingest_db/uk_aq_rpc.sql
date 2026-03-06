@@ -1021,8 +1021,8 @@ grant execute on function uk_aq_public.rpc_observations_window(
   integer
 ) to service_role;
 
--- station AQI source RPC (service_role): station-hour pollutant means with
--- inferred cadence + completeness filtering.
+-- station AQI source RPC (service_role): v1 simplified source output with
+-- hourly means + sample_count only.
 
 drop function if exists uk_aq_public.uk_aq_rpc_station_aqi_hourly_source(
   timestamptz,
@@ -1040,12 +1040,7 @@ returns table (
   timestamp_hour_utc timestamptz,
   pollutant_code text,
   hourly_mean_ugm3 double precision,
-  sample_count integer,
-  expected_count integer,
-  required_count integer,
-  capture_ratio real,
-  cadence_minutes integer,
-  timeseries_id integer
+  sample_count integer
 )
 language plpgsql
 security definer
@@ -1086,7 +1081,7 @@ begin
       on p.id = ts.phenomenon_id
     join uk_aq_core.observed_properties op
       on op.id = p.observed_property_id
-    where o.observed_at >= v_window_start - interval '48 hours'
+    where o.observed_at >= v_window_start
       and o.observed_at < v_window_end
       and ts.station_id is not null
       and op.code in ('pm25', 'pm10', 'no2')
@@ -1097,32 +1092,6 @@ begin
         or ts.station_id = any(p_station_ids)
       )
   ),
-  diffs as (
-    select
-      r.timeseries_id,
-      extract(epoch from (r.observed_at - lag(r.observed_at) over (
-        partition by r.timeseries_id
-        order by r.observed_at
-      ))) as diff_seconds
-    from raw r
-  ),
-  cadence as (
-    select
-      d.timeseries_id,
-      case
-        when percentile_cont(0.5) within group (order by d.diff_seconds) <= 90 then 1
-        when percentile_cont(0.5) within group (order by d.diff_seconds) <= 420 then 5
-        when percentile_cont(0.5) within group (order by d.diff_seconds) <= 780 then 10
-        when percentile_cont(0.5) within group (order by d.diff_seconds) <= 1260 then 15
-        when percentile_cont(0.5) within group (order by d.diff_seconds) <= 2700 then 30
-        else 60
-      end::int as cadence_minutes
-    from diffs d
-    where d.diff_seconds is not null
-      and d.diff_seconds >= 30
-      and d.diff_seconds <= 7200
-    group by d.timeseries_id
-  ),
   hourly_by_timeseries as (
     select
       r.station_id,
@@ -1130,76 +1099,37 @@ begin
       r.pollutant_code,
       date_trunc('hour', r.observed_at at time zone 'UTC') at time zone 'UTC' as timestamp_hour_utc,
       avg(r.value)::double precision as hourly_mean_ugm3,
-      count(*)::int as sample_count,
-      coalesce(c.cadence_minutes, 60)::int as cadence_minutes
+      count(*)::int as sample_count
     from raw r
-    left join cadence c
-      on c.timeseries_id = r.timeseries_id
-    where r.observed_at >= v_window_start
-      and r.observed_at < v_window_end
     group by
       r.station_id,
       r.timeseries_id,
       r.pollutant_code,
-      date_trunc('hour', r.observed_at at time zone 'UTC') at time zone 'UTC',
-      coalesce(c.cadence_minutes, 60)
+      date_trunc('hour', r.observed_at at time zone 'UTC') at time zone 'UTC'
   ),
-  hourly_scored as (
+  ranked as (
     select
       h.station_id,
       h.timestamp_hour_utc,
       h.pollutant_code,
       h.hourly_mean_ugm3,
       h.sample_count,
-      greatest(
-        1,
-        case
-          when h.cadence_minutes <= 0 then 1
-          else floor(60.0 / h.cadence_minutes)::int
-        end
-      )::int as expected_count,
-      h.cadence_minutes,
-      h.timeseries_id
-    from hourly_by_timeseries h
-  ),
-  ranked as (
-    select
-      hs.station_id,
-      hs.timestamp_hour_utc,
-      hs.pollutant_code,
-      hs.hourly_mean_ugm3,
-      hs.sample_count,
-      hs.expected_count,
-      ceil(0.75 * hs.expected_count::numeric)::int as required_count,
-      (
-        hs.sample_count::double precision
-        / nullif(hs.expected_count::double precision, 0)
-      )::real as capture_ratio,
-      hs.cadence_minutes,
-      hs.timeseries_id,
       row_number() over (
-        partition by hs.station_id, hs.timestamp_hour_utc, hs.pollutant_code
+        partition by h.station_id, h.timestamp_hour_utc, h.pollutant_code
         order by
-          (hs.sample_count >= ceil(0.75 * hs.expected_count::numeric)::int) desc,
-          hs.sample_count desc,
-          hs.timeseries_id asc
+          h.sample_count desc,
+          h.timeseries_id asc
       ) as rn
-    from hourly_scored hs
+    from hourly_by_timeseries h
   )
   select
     r.station_id,
     r.timestamp_hour_utc,
     r.pollutant_code,
     r.hourly_mean_ugm3,
-    r.sample_count,
-    r.expected_count,
-    r.required_count,
-    r.capture_ratio,
-    r.cadence_minutes,
-    r.timeseries_id
+    r.sample_count
   from ranked r
   where r.rn = 1
-    and r.sample_count >= r.required_count
   order by
     r.timestamp_hour_utc,
     r.station_id,
