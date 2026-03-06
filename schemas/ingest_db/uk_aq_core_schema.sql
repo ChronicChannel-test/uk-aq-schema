@@ -392,6 +392,18 @@ create table if not exists stations (
   created_at timestamptz default now()
 );
 
+create unique index if not exists stations_connector_ref_uidx
+  on stations(connector_id, service_ref, station_ref);
+create index if not exists stations_geom_idx on stations using gist (geometry);
+create index if not exists stations_geom_cast_idx on stations using gist ((geometry::geometry));
+create index if not exists stations_la_code_idx on stations(la_code);
+create index if not exists stations_la_version_idx on stations(la_version);
+create index if not exists stations_pcon_code_idx on stations(pcon_code);
+create index if not exists stations_pcon_version_idx on stations(pcon_version);
+create index if not exists stations_pcon_code_null_idx
+  on stations(id)
+  where pcon_code is null;
+
 create table if not exists station_metadata (
   station_id bigint primary key references stations(id) on delete cascade,
   attributes jsonb not null default '{}'::jsonb,
