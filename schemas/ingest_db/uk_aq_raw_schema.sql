@@ -1642,22 +1642,14 @@ create table if not exists uk_aq_aggdaily.station_aqi_hourly_helper (
   pm25_hourly_sample_count smallint,
   pm10_hourly_sample_count smallint,
 
-  pm25_rolling24h_valid_hours smallint,
-  pm10_rolling24h_valid_hours smallint,
 
   daqi_no2_index_level smallint,
-  daqi_no2_index_band text,
-  daqi_pm25_index_level smallint,
-  daqi_pm25_index_band text,
-  daqi_pm10_index_level smallint,
-  daqi_pm10_index_band text,
+  daqi_pm25_rolling24h_index_level smallint,
+  daqi_pm10_rolling24h_index_level smallint,
 
   eaqi_no2_index_level smallint,
-  eaqi_no2_index_band text,
   eaqi_pm25_index_level smallint,
-  eaqi_pm25_index_band text,
   eaqi_pm10_index_level smallint,
-  eaqi_pm10_index_band text,
 
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),

@@ -1407,9 +1407,7 @@ begin
       case
         when wr.pm10_rolling24h_valid_hours_raw >= 18 then wr.pm10_rolling24h_mean_raw
         else null
-      end as pm10_rolling24h_mean_ugm3,
-      wr.pm25_rolling24h_valid_hours_raw,
-      wr.pm10_rolling24h_valid_hours_raw
+      end as pm10_rolling24h_mean_ugm3
     from with_rolling wr
     where wr.timestamp_hour_utc > (v_start_exclusive - interval '1 hour')
       and wr.timestamp_hour_utc <= (v_end_inclusive - interval '1 hour')
@@ -1435,20 +1433,12 @@ begin
         when t.pm10_hourly_sample_count_raw is null then null
         else least(32767, greatest(0, t.pm10_hourly_sample_count_raw))::smallint
       end as pm10_hourly_sample_count,
-      least(24, greatest(0, t.pm25_rolling24h_valid_hours_raw))::smallint as pm25_rolling24h_valid_hours,
-      least(24, greatest(0, t.pm10_rolling24h_valid_hours_raw))::smallint as pm10_rolling24h_valid_hours,
       daqi_no2.index_level as daqi_no2_index_level,
-      daqi_no2.index_band as daqi_no2_index_band,
-      daqi_pm25.index_level as daqi_pm25_index_level,
-      daqi_pm25.index_band as daqi_pm25_index_band,
-      daqi_pm10.index_level as daqi_pm10_index_level,
-      daqi_pm10.index_band as daqi_pm10_index_band,
+      daqi_pm25.index_level as daqi_pm25_rolling24h_index_level,
+      daqi_pm10.index_level as daqi_pm10_rolling24h_index_level,
       eaqi_no2.index_level as eaqi_no2_index_level,
-      eaqi_no2.index_band as eaqi_no2_index_band,
       eaqi_pm25.index_level as eaqi_pm25_index_level,
-      eaqi_pm25.index_band as eaqi_pm25_index_band,
-      eaqi_pm10.index_level as eaqi_pm10_index_level,
-      eaqi_pm10.index_band as eaqi_pm10_index_band
+      eaqi_pm10.index_level as eaqi_pm10_index_level
     from target_hours t
     left join lateral uk_aq_aggdaily.uk_aq_aqi_index_lookup(
       'daqi',
@@ -1518,20 +1508,12 @@ begin
           e.no2_hourly_sample_count,
           e.pm25_hourly_sample_count,
           e.pm10_hourly_sample_count,
-          e.pm25_rolling24h_valid_hours,
-          e.pm10_rolling24h_valid_hours,
           e.daqi_no2_index_level,
-          e.daqi_no2_index_band,
-          e.daqi_pm25_index_level,
-          e.daqi_pm25_index_band,
-          e.daqi_pm10_index_level,
-          e.daqi_pm10_index_band,
+          e.daqi_pm25_rolling24h_index_level,
+          e.daqi_pm10_rolling24h_index_level,
           e.eaqi_no2_index_level,
-          e.eaqi_no2_index_band,
           e.eaqi_pm25_index_level,
-          e.eaqi_pm25_index_band,
-          e.eaqi_pm10_index_level,
-          e.eaqi_pm10_index_band
+          e.eaqi_pm10_index_level
         )
         is distinct from
         (
@@ -1543,20 +1525,12 @@ begin
           c.no2_hourly_sample_count,
           c.pm25_hourly_sample_count,
           c.pm10_hourly_sample_count,
-          c.pm25_rolling24h_valid_hours,
-          c.pm10_rolling24h_valid_hours,
           c.daqi_no2_index_level,
-          c.daqi_no2_index_band,
-          c.daqi_pm25_index_level,
-          c.daqi_pm25_index_band,
-          c.daqi_pm10_index_level,
-          c.daqi_pm10_index_band,
+          c.daqi_pm25_rolling24h_index_level,
+          c.daqi_pm10_rolling24h_index_level,
           c.eaqi_no2_index_level,
-          c.eaqi_no2_index_band,
           c.eaqi_pm25_index_level,
-          c.eaqi_pm25_index_band,
-          c.eaqi_pm10_index_level,
-          c.eaqi_pm10_index_band
+          c.eaqi_pm10_index_level
         )
       )
   ),
@@ -1572,20 +1546,12 @@ begin
       no2_hourly_sample_count,
       pm25_hourly_sample_count,
       pm10_hourly_sample_count,
-      pm25_rolling24h_valid_hours,
-      pm10_rolling24h_valid_hours,
       daqi_no2_index_level,
-      daqi_no2_index_band,
-      daqi_pm25_index_level,
-      daqi_pm25_index_band,
-      daqi_pm10_index_level,
-      daqi_pm10_index_band,
+      daqi_pm25_rolling24h_index_level,
+      daqi_pm10_rolling24h_index_level,
       eaqi_no2_index_level,
-      eaqi_no2_index_band,
       eaqi_pm25_index_level,
-      eaqi_pm25_index_band,
       eaqi_pm10_index_level,
-      eaqi_pm10_index_band,
       updated_at
     )
     select
@@ -1599,20 +1565,12 @@ begin
       c.no2_hourly_sample_count,
       c.pm25_hourly_sample_count,
       c.pm10_hourly_sample_count,
-      c.pm25_rolling24h_valid_hours,
-      c.pm10_rolling24h_valid_hours,
       c.daqi_no2_index_level,
-      c.daqi_no2_index_band,
-      c.daqi_pm25_index_level,
-      c.daqi_pm25_index_band,
-      c.daqi_pm10_index_level,
-      c.daqi_pm10_index_band,
+      c.daqi_pm25_rolling24h_index_level,
+      c.daqi_pm10_rolling24h_index_level,
       c.eaqi_no2_index_level,
-      c.eaqi_no2_index_band,
       c.eaqi_pm25_index_level,
-      c.eaqi_pm25_index_band,
       c.eaqi_pm10_index_level,
-      c.eaqi_pm10_index_band,
       now()
     from changed c
     on conflict (station_id, timestamp_hour_utc) do update
@@ -1625,20 +1583,12 @@ begin
       no2_hourly_sample_count = excluded.no2_hourly_sample_count,
       pm25_hourly_sample_count = excluded.pm25_hourly_sample_count,
       pm10_hourly_sample_count = excluded.pm10_hourly_sample_count,
-      pm25_rolling24h_valid_hours = excluded.pm25_rolling24h_valid_hours,
-      pm10_rolling24h_valid_hours = excluded.pm10_rolling24h_valid_hours,
       daqi_no2_index_level = excluded.daqi_no2_index_level,
-      daqi_no2_index_band = excluded.daqi_no2_index_band,
-      daqi_pm25_index_level = excluded.daqi_pm25_index_level,
-      daqi_pm25_index_band = excluded.daqi_pm25_index_band,
-      daqi_pm10_index_level = excluded.daqi_pm10_index_level,
-      daqi_pm10_index_band = excluded.daqi_pm10_index_band,
+      daqi_pm25_rolling24h_index_level = excluded.daqi_pm25_rolling24h_index_level,
+      daqi_pm10_rolling24h_index_level = excluded.daqi_pm10_rolling24h_index_level,
       eaqi_no2_index_level = excluded.eaqi_no2_index_level,
-      eaqi_no2_index_band = excluded.eaqi_no2_index_band,
       eaqi_pm25_index_level = excluded.eaqi_pm25_index_level,
-      eaqi_pm25_index_band = excluded.eaqi_pm25_index_band,
       eaqi_pm10_index_level = excluded.eaqi_pm10_index_level,
-      eaqi_pm10_index_band = excluded.eaqi_pm10_index_band,
       updated_at = now()
     where
       (
@@ -1650,20 +1600,12 @@ begin
         uk_aq_aggdaily.station_aqi_hourly_helper.no2_hourly_sample_count,
         uk_aq_aggdaily.station_aqi_hourly_helper.pm25_hourly_sample_count,
         uk_aq_aggdaily.station_aqi_hourly_helper.pm10_hourly_sample_count,
-        uk_aq_aggdaily.station_aqi_hourly_helper.pm25_rolling24h_valid_hours,
-        uk_aq_aggdaily.station_aqi_hourly_helper.pm10_rolling24h_valid_hours,
         uk_aq_aggdaily.station_aqi_hourly_helper.daqi_no2_index_level,
-        uk_aq_aggdaily.station_aqi_hourly_helper.daqi_no2_index_band,
-        uk_aq_aggdaily.station_aqi_hourly_helper.daqi_pm25_index_level,
-        uk_aq_aggdaily.station_aqi_hourly_helper.daqi_pm25_index_band,
-        uk_aq_aggdaily.station_aqi_hourly_helper.daqi_pm10_index_level,
-        uk_aq_aggdaily.station_aqi_hourly_helper.daqi_pm10_index_band,
+        uk_aq_aggdaily.station_aqi_hourly_helper.daqi_pm25_rolling24h_index_level,
+        uk_aq_aggdaily.station_aqi_hourly_helper.daqi_pm10_rolling24h_index_level,
         uk_aq_aggdaily.station_aqi_hourly_helper.eaqi_no2_index_level,
-        uk_aq_aggdaily.station_aqi_hourly_helper.eaqi_no2_index_band,
         uk_aq_aggdaily.station_aqi_hourly_helper.eaqi_pm25_index_level,
-        uk_aq_aggdaily.station_aqi_hourly_helper.eaqi_pm25_index_band,
-        uk_aq_aggdaily.station_aqi_hourly_helper.eaqi_pm10_index_level,
-        uk_aq_aggdaily.station_aqi_hourly_helper.eaqi_pm10_index_band
+        uk_aq_aggdaily.station_aqi_hourly_helper.eaqi_pm10_index_level
       )
       is distinct from
       (
@@ -1675,20 +1617,12 @@ begin
         excluded.no2_hourly_sample_count,
         excluded.pm25_hourly_sample_count,
         excluded.pm10_hourly_sample_count,
-        excluded.pm25_rolling24h_valid_hours,
-        excluded.pm10_rolling24h_valid_hours,
         excluded.daqi_no2_index_level,
-        excluded.daqi_no2_index_band,
-        excluded.daqi_pm25_index_level,
-        excluded.daqi_pm25_index_band,
-        excluded.daqi_pm10_index_level,
-        excluded.daqi_pm10_index_band,
+        excluded.daqi_pm25_rolling24h_index_level,
+        excluded.daqi_pm10_rolling24h_index_level,
         excluded.eaqi_no2_index_level,
-        excluded.eaqi_no2_index_band,
         excluded.eaqi_pm25_index_level,
-        excluded.eaqi_pm25_index_band,
-        excluded.eaqi_pm10_index_level,
-        excluded.eaqi_pm10_index_band
+        excluded.eaqi_pm10_index_level
       )
     returning
       station_id,
@@ -1744,20 +1678,12 @@ returns table (
   no2_hourly_sample_count smallint,
   pm25_hourly_sample_count smallint,
   pm10_hourly_sample_count smallint,
-  pm25_rolling24h_valid_hours smallint,
-  pm10_rolling24h_valid_hours smallint,
   daqi_no2_index_level smallint,
-  daqi_no2_index_band text,
-  daqi_pm25_index_level smallint,
-  daqi_pm25_index_band text,
-  daqi_pm10_index_level smallint,
-  daqi_pm10_index_band text,
+  daqi_pm25_rolling24h_index_level smallint,
+  daqi_pm10_rolling24h_index_level smallint,
   eaqi_no2_index_level smallint,
-  eaqi_no2_index_band text,
   eaqi_pm25_index_level smallint,
-  eaqi_pm25_index_band text,
-  eaqi_pm10_index_level smallint,
-  eaqi_pm10_index_band text
+  eaqi_pm10_index_level smallint
 )
 language plpgsql
 security definer
@@ -1793,20 +1719,12 @@ begin
     h.no2_hourly_sample_count,
     h.pm25_hourly_sample_count,
     h.pm10_hourly_sample_count,
-    h.pm25_rolling24h_valid_hours,
-    h.pm10_rolling24h_valid_hours,
     h.daqi_no2_index_level,
-    h.daqi_no2_index_band,
-    h.daqi_pm25_index_level,
-    h.daqi_pm25_index_band,
-    h.daqi_pm10_index_level,
-    h.daqi_pm10_index_band,
+    h.daqi_pm25_rolling24h_index_level,
+    h.daqi_pm10_rolling24h_index_level,
     h.eaqi_no2_index_level,
-    h.eaqi_no2_index_band,
     h.eaqi_pm25_index_level,
-    h.eaqi_pm25_index_band,
-    h.eaqi_pm10_index_level,
-    h.eaqi_pm10_index_band
+    h.eaqi_pm10_index_level
   from uk_aq_aggdaily.station_aqi_hourly_helper h
   where h.timestamp_hour_utc > (v_start_exclusive - interval '1 hour')
     and h.timestamp_hour_utc <= (v_end_inclusive - interval '1 hour')
