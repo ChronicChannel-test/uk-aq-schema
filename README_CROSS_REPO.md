@@ -4,7 +4,7 @@
 - `CIC-test-uk-aq-ingest` is the main repo for this project and the default starting point for cross-repo tasks.
 
 ## Purpose
-This repo defines the UK AQ database structure: schemas, tables, views, and security. It is the source of truth for DDL that the ingest and history repos depend on.
+This repo defines the UK AQ database structure: schemas, tables, views, and security. It is the source of truth for DDL used by ingest and ops runtimes.
 
 ## Repo structure (top-level)
 - `schemas/`: Primary SQL schema files (core/raw/history/pop), plus migrations and archive.
@@ -15,7 +15,7 @@ This repo defines the UK AQ database structure: schemas, tables, views, and secu
 
 ## How this repo connects to the others
 - **Ingest repo**: `CIC-test-uk-aq-ingest` runs ingests that write into these schemas.
-- **History repo**: `uk-aq-history` (if present) uses these schemas for historical backfills/analysis.
+- **Ops repo**: `CIC-test-uk-aq-ops` runs Cloud Run services and backfill workers that call DB functions defined here.
 - **Edge Functions**: owned and deployed from the ingest repo; they rely on tables/functions defined here.
 - **Change flow**: updating tables or functions here typically requires updating ingest queries and RPC calls in the ingest repo.
 
@@ -47,8 +47,8 @@ No scripted commands were found in this repo. There is no preferred schema-apply
 - Schemas directory: `schemas/`
 - System docs: `system_docs/`
 - Ingest repo (sibling): `../CIC-test-uk-aq-ingest`
+- Ops repo (sibling): `../CIC-test-uk-aq Operations/CIC-test-uk-aq-ops`
 - Naming conventions (ingest repo): `../CIC-test-uk-aq-ingest/AGENTS.md`
-- History repo (sibling): `../CIC-test-uk-aq-history/uk-aq-history`
 
 ## WORKING STYLE (IMPORTANT)
 

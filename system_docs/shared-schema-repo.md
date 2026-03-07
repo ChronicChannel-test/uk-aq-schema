@@ -66,9 +66,7 @@ Notes:
 - Supabase SQL Editor does not support `\i` include syntax. Use `psql` or the Supabase CLI.
 - Keep environment-specific secrets and cron schedules in each project, not in the shared repo.
 
-## Separate history repo
+## Repo model
 
-If you want a dedicated history repo (functions + jobs), keep:
-- `uk-aq-history/` for Edge Functions and scheduling logic.
-- `uk-aq-schema/` for shared SQL + DBML.
-- Existing ingest repos unchanged; they only consume the shared schema.
+Use a single shared schema repo (`uk-aq-schema/`) with ingest/ops repos consuming it.
+No separate history code repo is required.
