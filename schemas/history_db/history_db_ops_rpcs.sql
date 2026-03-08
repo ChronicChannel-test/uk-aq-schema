@@ -77,6 +77,252 @@ end;
 $$;
 
 drop function if exists uk_aq_public.uk_aq_rpc_history_observations_upsert(jsonb);
+drop function if exists uk_aq_public.uk_aq_rpc_station_aqi_hourly_source(
+  timestamptz,
+  timestamptz,
+  bigint[]
+);
+create or replace function uk_aq_public.uk_aq_rpc_station_aqi_hourly_source(
+  p_window_start timestamptz,
+  p_window_end timestamptz,
+  p_station_ids bigint[] default null
+)
+returns table (
+  station_id bigint,
+  timestamp_hour_utc timestamptz,
+  pollutant_code text,
+  hourly_mean_ugm3 double precision,
+  sample_count integer
+)
+language plpgsql
+security definer
+set search_path = uk_aq_history, uk_aq_core, public, pg_catalog
+as $$
+declare
+  v_window_start timestamptz;
+  v_window_end timestamptz;
+begin
+  if auth.role() <> 'service_role' then
+    raise exception 'service_role required';
+  end if;
+
+  if p_window_start is null or p_window_end is null then
+    raise exception 'p_window_start and p_window_end are required';
+  end if;
+
+  v_window_start := date_trunc('hour', p_window_start);
+  v_window_end := date_trunc('hour', p_window_end);
+
+  if v_window_end <= v_window_start then
+    raise exception 'p_window_end must be greater than p_window_start';
+  end if;
+
+  return query
+  with raw as (
+    select
+      ts.id as timeseries_id,
+      ts.station_id,
+      op.code as pollutant_code,
+      o.observed_at,
+      o.value
+    from uk_aq_history.observations o
+    join uk_aq_core.timeseries ts
+      on ts.id = o.timeseries_id
+     and ts.connector_id = o.connector_id
+    join uk_aq_core.phenomena p
+      on p.id = ts.phenomenon_id
+    join uk_aq_core.observed_properties op
+      on op.id = p.observed_property_id
+    where o.observed_at >= v_window_start
+      and o.observed_at < v_window_end
+      and ts.station_id is not null
+      and op.code in ('pm25', 'pm10', 'no2')
+      and o.value is not null
+      and o.value >= 0
+      and (
+        p_station_ids is null
+        or ts.station_id = any(p_station_ids)
+      )
+  ),
+  hourly_by_timeseries as (
+    select
+      r.station_id,
+      r.timeseries_id,
+      r.pollutant_code,
+      date_trunc('hour', r.observed_at at time zone 'UTC') at time zone 'UTC' as timestamp_hour_utc,
+      avg(r.value)::double precision as hourly_mean_ugm3,
+      count(*)::int as sample_count
+    from raw r
+    group by
+      r.station_id,
+      r.timeseries_id,
+      r.pollutant_code,
+      date_trunc('hour', r.observed_at at time zone 'UTC') at time zone 'UTC'
+  ),
+  ranked as (
+    select
+      h.station_id,
+      h.timestamp_hour_utc,
+      h.pollutant_code,
+      h.hourly_mean_ugm3,
+      h.sample_count,
+      row_number() over (
+        partition by h.station_id, h.timestamp_hour_utc, h.pollutant_code
+        order by
+          h.sample_count desc,
+          h.timeseries_id asc
+      ) as rn
+    from hourly_by_timeseries h
+  )
+  select
+    r.station_id,
+    r.timestamp_hour_utc,
+    r.pollutant_code,
+    r.hourly_mean_ugm3,
+    r.sample_count
+  from ranked r
+  where r.rn = 1
+  order by
+    r.timestamp_hour_utc,
+    r.station_id,
+    r.pollutant_code;
+end;
+$$;
+
+drop function if exists uk_aq_public.uk_aq_rpc_database_size_bytes();
+create or replace function uk_aq_public.uk_aq_rpc_database_size_bytes()
+returns table (
+  database_name text,
+  size_bytes bigint,
+  oldest_observed_at timestamptz,
+  sampled_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+begin
+  if auth.role() <> 'service_role' then
+    raise exception 'service_role required';
+  end if;
+
+  return query
+  select
+    current_database()::text as database_name,
+    (
+      select coalesce(sum(pg_database_size(pg_database.datname)), 0)::bigint
+      from pg_database
+    ) as size_bytes,
+    (select min(o.observed_at) from uk_aq_history.observations o) as oldest_observed_at,
+    now() as sampled_at;
+end;
+$$;
+
+drop function if exists uk_aq_public.uk_aq_rpc_db_size_metric_upsert(
+  text,
+  text,
+  bigint,
+  timestamptz,
+  timestamptz,
+  text
+);
+create or replace function uk_aq_public.uk_aq_rpc_db_size_metric_upsert(
+  p_database_label text,
+  p_database_name text,
+  p_size_bytes bigint,
+  p_oldest_observed_at timestamptz default null,
+  p_recorded_at timestamptz default now(),
+  p_source text default null
+)
+returns table (rows_upserted int)
+language plpgsql
+security definer
+set search_path = uk_aq_ops, public, pg_catalog
+as $$
+declare
+  v_bucket_hour timestamptz;
+  v_rows int := 0;
+  v_source text;
+begin
+  if auth.role() <> 'service_role' then
+    raise exception 'service_role required';
+  end if;
+
+  if p_database_label not in ('ingestdb', 'historydb', 'aggdailydb') then
+    raise exception 'invalid database_label: %', p_database_label;
+  end if;
+
+  if p_database_name is null or btrim(p_database_name) = '' then
+    raise exception 'database_name is required';
+  end if;
+
+  if p_size_bytes is null or p_size_bytes < 0 then
+    raise exception 'size_bytes must be >= 0';
+  end if;
+
+  v_bucket_hour := date_trunc('hour', coalesce(p_recorded_at, now()));
+  v_source := coalesce(nullif(btrim(p_source), ''), 'uk_aq_db_size_logger_cloud_run');
+
+  insert into uk_aq_ops.db_size_metrics_hourly (
+    bucket_hour,
+    database_label,
+    database_name,
+    size_bytes,
+    oldest_observed_at,
+    source,
+    recorded_at,
+    updated_at
+  )
+  values (
+    v_bucket_hour,
+    p_database_label,
+    p_database_name,
+    p_size_bytes,
+    p_oldest_observed_at,
+    v_source,
+    coalesce(p_recorded_at, now()),
+    now()
+  )
+  on conflict (bucket_hour, database_label) do update set
+    database_name = excluded.database_name,
+    size_bytes = excluded.size_bytes,
+    oldest_observed_at = excluded.oldest_observed_at,
+    source = excluded.source,
+    recorded_at = excluded.recorded_at,
+    updated_at = now();
+
+  get diagnostics v_rows = row_count;
+  return query select v_rows;
+end;
+$$;
+
+drop function if exists uk_aq_public.uk_aq_rpc_db_size_metric_cleanup(integer);
+create or replace function uk_aq_public.uk_aq_rpc_db_size_metric_cleanup(
+  p_retention_days integer default 120
+)
+returns table (rows_deleted bigint)
+language plpgsql
+security definer
+set search_path = uk_aq_ops, public, pg_catalog
+as $$
+declare
+  v_days integer;
+  v_rows bigint := 0;
+begin
+  if auth.role() <> 'service_role' then
+    raise exception 'service_role required';
+  end if;
+
+  v_days := greatest(1, least(coalesce(p_retention_days, 120), 3650));
+
+  delete from uk_aq_ops.db_size_metrics_hourly
+  where bucket_hour < now() - make_interval(days => v_days);
+
+  get diagnostics v_rows = row_count;
+  return query select v_rows;
+end;
+$$;
+
 create or replace function uk_aq_public.uk_aq_rpc_history_observations_upsert(rows jsonb)
 returns table(observations_upserted int)
 language plpgsql
@@ -624,9 +870,133 @@ begin
 end;
 $$;
 
+drop function if exists uk_aq_public.uk_aq_rpc_info_schema_columns(text, text[]);
+create or replace function uk_aq_public.uk_aq_rpc_info_schema_columns(
+  p_schema text default 'uk_aq_core',
+  p_table_names text[] default null
+)
+returns table (
+  table_name text,
+  column_name text,
+  udt_name text,
+  is_nullable text,
+  column_default text,
+  ordinal_position integer
+)
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+begin
+  if auth.role() <> 'service_role' then
+    raise exception 'service_role required';
+  end if;
+
+  return query
+  select
+    c.table_name::text,
+    c.column_name::text,
+    c.udt_name::text,
+    c.is_nullable::text,
+    c.column_default::text,
+    c.ordinal_position::integer
+  from information_schema.columns c
+  where c.table_schema = coalesce(nullif(trim(p_schema), ''), 'uk_aq_core')
+    and (p_table_names is null or c.table_name = any(p_table_names))
+  order by c.table_name, c.ordinal_position;
+end;
+$$;
+
+drop function if exists uk_aq_public.uk_aq_rpc_info_schema_primary_keys(text, text[]);
+create or replace function uk_aq_public.uk_aq_rpc_info_schema_primary_keys(
+  p_schema text default 'uk_aq_core',
+  p_table_names text[] default null
+)
+returns table (
+  table_name text,
+  constraint_name text,
+  column_name text,
+  ordinal_position integer
+)
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+begin
+  if auth.role() <> 'service_role' then
+    raise exception 'service_role required';
+  end if;
+
+  return query
+  select
+    kcu.table_name::text,
+    kcu.constraint_name::text,
+    kcu.column_name::text,
+    kcu.ordinal_position::integer
+  from information_schema.table_constraints tc
+  join information_schema.key_column_usage kcu
+    on tc.constraint_name = kcu.constraint_name
+   and tc.table_schema = kcu.table_schema
+   and tc.table_name = kcu.table_name
+  where tc.table_schema = coalesce(nullif(trim(p_schema), ''), 'uk_aq_core')
+    and tc.constraint_type = 'PRIMARY KEY'
+    and (p_table_names is null or tc.table_name = any(p_table_names))
+  order by kcu.table_name, kcu.constraint_name, kcu.ordinal_position;
+end;
+$$;
+
 revoke execute on function uk_aq_public.uk_aq_rpc_observations_hourly_fingerprint(timestamptz, timestamptz) from public;
 revoke execute on function uk_aq_public.uk_aq_rpc_observations_hourly_fingerprint(timestamptz, timestamptz) from anon, authenticated;
 grant execute on function uk_aq_public.uk_aq_rpc_observations_hourly_fingerprint(timestamptz, timestamptz) to service_role;
+
+revoke execute on function uk_aq_public.uk_aq_rpc_database_size_bytes() from public;
+revoke execute on function uk_aq_public.uk_aq_rpc_database_size_bytes() from anon, authenticated;
+grant execute on function uk_aq_public.uk_aq_rpc_database_size_bytes() to service_role;
+
+revoke execute on function uk_aq_public.uk_aq_rpc_db_size_metric_upsert(
+  text,
+  text,
+  bigint,
+  timestamptz,
+  timestamptz,
+  text
+) from public;
+revoke execute on function uk_aq_public.uk_aq_rpc_db_size_metric_upsert(
+  text,
+  text,
+  bigint,
+  timestamptz,
+  timestamptz,
+  text
+) from anon, authenticated;
+grant execute on function uk_aq_public.uk_aq_rpc_db_size_metric_upsert(
+  text,
+  text,
+  bigint,
+  timestamptz,
+  timestamptz,
+  text
+) to service_role;
+
+revoke execute on function uk_aq_public.uk_aq_rpc_db_size_metric_cleanup(integer) from public;
+revoke execute on function uk_aq_public.uk_aq_rpc_db_size_metric_cleanup(integer) from anon, authenticated;
+grant execute on function uk_aq_public.uk_aq_rpc_db_size_metric_cleanup(integer) to service_role;
+
+revoke execute on function uk_aq_public.uk_aq_rpc_station_aqi_hourly_source(
+  timestamptz,
+  timestamptz,
+  bigint[]
+) from public;
+revoke execute on function uk_aq_public.uk_aq_rpc_station_aqi_hourly_source(
+  timestamptz,
+  timestamptz,
+  bigint[]
+) from anon, authenticated;
+grant execute on function uk_aq_public.uk_aq_rpc_station_aqi_hourly_source(
+  timestamptz,
+  timestamptz,
+  bigint[]
+) to service_role;
 
 revoke execute on function uk_aq_public.uk_aq_rpc_history_observations_upsert(jsonb) from public;
 revoke execute on function uk_aq_public.uk_aq_rpc_history_observations_upsert(jsonb) from anon, authenticated;
@@ -651,5 +1021,13 @@ grant execute on function uk_aq_public.uk_aq_rpc_history_drop_candidates(timesta
 revoke execute on function uk_aq_public.uk_aq_rpc_history_drop_partition(text) from public;
 revoke execute on function uk_aq_public.uk_aq_rpc_history_drop_partition(text) from anon, authenticated;
 grant execute on function uk_aq_public.uk_aq_rpc_history_drop_partition(text) to service_role;
+
+revoke execute on function uk_aq_public.uk_aq_rpc_info_schema_columns(text, text[]) from public;
+revoke execute on function uk_aq_public.uk_aq_rpc_info_schema_columns(text, text[]) from anon, authenticated;
+grant execute on function uk_aq_public.uk_aq_rpc_info_schema_columns(text, text[]) to service_role;
+
+revoke execute on function uk_aq_public.uk_aq_rpc_info_schema_primary_keys(text, text[]) from public;
+revoke execute on function uk_aq_public.uk_aq_rpc_info_schema_primary_keys(text, text[]) from anon, authenticated;
+grant execute on function uk_aq_public.uk_aq_rpc_info_schema_primary_keys(text, text[]) to service_role;
 
 grant usage on schema uk_aq_public to service_role;
