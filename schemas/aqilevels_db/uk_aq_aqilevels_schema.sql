@@ -1,4 +1,4 @@
--- uk_aq_core subset for Agg Daily DB.
+-- uk_aq_core subset for Obs AQI DB.
 -- Source of truth copied from ingest schema DDL so mirrored tables match exactly.
 
 create extension if not exists postgis;
@@ -6,7 +6,7 @@ create extension if not exists pgcrypto;
 
 create schema if not exists uk_aq_core;
 create schema if not exists uk_aq_public;
-create schema if not exists uk_aq_aggdaily;
+create schema if not exists uk_aq_aqilevels;
 create schema if not exists uk_aq_ops;
 
 set search_path = uk_aq_core, public;
@@ -333,12 +333,12 @@ alter default privileges in schema uk_aq_core
 
 grant usage on schema public to service_role;
 grant usage on schema uk_aq_public to service_role;
-grant usage on schema uk_aq_aggdaily to service_role;
+grant usage on schema uk_aq_aqilevels to service_role;
 grant usage on schema uk_aq_ops to service_role;
 
 create table if not exists uk_aq_ops.db_size_metrics_hourly (
   bucket_hour timestamptz not null,
-  database_label text not null check (database_label in ('ingestdb', 'historydb', 'aggdailydb')),
+  database_label text not null check (database_label in ('ingestdb', 'obs_aqidb')),
   database_name text not null,
   size_bytes bigint not null check (size_bytes >= 0),
   oldest_observed_at timestamptz,
@@ -352,10 +352,26 @@ create table if not exists uk_aq_ops.db_size_metrics_hourly (
 create index if not exists db_size_metrics_hourly_database_label_idx
   on uk_aq_ops.db_size_metrics_hourly (database_label, bucket_hour desc);
 
+create table if not exists uk_aq_ops.schema_size_metrics_hourly (
+  bucket_hour timestamptz not null,
+  database_label text not null check (database_label in ('obs_aqidb')),
+  schema_name text not null check (schema_name in ('uk_aq_observs', 'uk_aq_aqilevels')),
+  size_bytes bigint not null check (size_bytes >= 0),
+  oldest_observed_at timestamptz,
+  source text not null default 'uk_aq_db_size_logger_cloud_run',
+  recorded_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (bucket_hour, database_label, schema_name)
+);
+
+create index if not exists schema_size_metrics_hourly_label_schema_idx
+  on uk_aq_ops.schema_size_metrics_hourly (database_label, schema_name, bucket_hour desc);
+
 -- Backfill run/ledger tables used by uk_aq_backfill_cloud_run.
 create table if not exists uk_aq_ops.backfill_runs (
   run_id uuid primary key,
-  run_mode text not null check (run_mode in ('local_to_aggdaily', 'history_to_r2', 'source_to_all')),
+  run_mode text not null check (run_mode in ('local_to_aqilevels', 'obs_aqi_to_r2', 'source_to_all')),
   trigger_mode text not null check (trigger_mode in ('manual', 'scheduler')),
   window_from_utc date not null,
   window_to_utc date not null,
@@ -364,7 +380,7 @@ create table if not exists uk_aq_ops.backfill_runs (
   force_replace boolean not null default false,
   status text not null check (status in ('in_progress', 'ok', 'error', 'dry_run', 'stubbed')),
   rows_read bigint not null default 0,
-  rows_written_aggdaily bigint not null default 0,
+  rows_written_aqilevels bigint not null default 0,
   objects_written_r2 bigint not null default 0,
   checkpoint_json jsonb,
   error_json jsonb,
@@ -380,13 +396,13 @@ create index if not exists backfill_runs_started_at_idx
 create table if not exists uk_aq_ops.backfill_run_days (
   id bigserial primary key,
   run_id uuid not null references uk_aq_ops.backfill_runs(run_id) on delete cascade,
-  run_mode text not null check (run_mode in ('local_to_aggdaily', 'history_to_r2', 'source_to_all')),
+  run_mode text not null check (run_mode in ('local_to_aqilevels', 'obs_aqi_to_r2', 'source_to_all')),
   day_utc date not null,
   connector_id integer not null,
-  source_kind text not null check (source_kind in ('ingestdb', 'historydb', 'r2', 'api', 'download', 'manual_file', 'none')),
+  source_kind text not null check (source_kind in ('ingestdb', 'obs_aqidb', 'r2', 'api', 'download', 'manual_file', 'none')),
   status text not null check (status in ('planned', 'in_progress', 'complete', 'skipped', 'error', 'dry_run', 'stubbed')),
   rows_read bigint not null default 0,
-  rows_written_aggdaily bigint not null default 0,
+  rows_written_aqilevels bigint not null default 0,
   objects_written_r2 bigint not null default 0,
   checkpoint_json jsonb,
   error_json jsonb,
@@ -403,13 +419,13 @@ create index if not exists backfill_run_days_lookup_idx
   on uk_aq_ops.backfill_run_days (run_mode, day_utc desc, connector_id);
 
 create table if not exists uk_aq_ops.backfill_checkpoints (
-  run_mode text not null check (run_mode in ('local_to_aggdaily', 'history_to_r2', 'source_to_all')),
+  run_mode text not null check (run_mode in ('local_to_aqilevels', 'obs_aqi_to_r2', 'source_to_all')),
   day_utc date not null,
   connector_id integer not null,
-  source_kind text not null check (source_kind in ('ingestdb', 'historydb', 'r2', 'api', 'download', 'manual_file', 'none')),
+  source_kind text not null check (source_kind in ('ingestdb', 'obs_aqidb', 'r2', 'api', 'download', 'manual_file', 'none')),
   status text not null check (status in ('complete', 'error', 'dry_run', 'skipped')),
   rows_read bigint not null default 0,
-  rows_written_aggdaily bigint not null default 0,
+  rows_written_aqilevels bigint not null default 0,
   objects_written_r2 bigint not null default 0,
   checkpoint_json jsonb,
   error_json jsonb,
@@ -423,7 +439,7 @@ create index if not exists backfill_checkpoints_day_connector_idx
 create table if not exists uk_aq_ops.backfill_errors (
   id bigserial primary key,
   run_id uuid,
-  run_mode text not null check (run_mode in ('local_to_aggdaily', 'history_to_r2', 'source_to_all')),
+  run_mode text not null check (run_mode in ('local_to_aqilevels', 'obs_aqi_to_r2', 'source_to_all')),
   day_utc date,
   connector_id integer,
   source_kind text,
@@ -520,6 +536,20 @@ select
 from uk_aq_ops.db_size_metrics_hourly;
 alter view if exists uk_aq_public.uk_aq_db_size_metrics_hourly set (security_invoker = true);
 
+create or replace view uk_aq_public.uk_aq_schema_size_metrics_hourly as
+select
+  bucket_hour,
+  database_label,
+  schema_name,
+  size_bytes,
+  source,
+  recorded_at,
+  created_at,
+  updated_at,
+  oldest_observed_at
+from uk_aq_ops.schema_size_metrics_hourly;
+alter view if exists uk_aq_public.uk_aq_schema_size_metrics_hourly set (security_invoker = true);
+
 create extension if not exists pg_cron with schema extensions;
 
 create or replace function uk_aq_ops.uk_aq_db_size_metric_sample_local(
@@ -541,10 +571,27 @@ declare
   v_rows_upserted int := 0;
   v_rows_deleted bigint := 0;
   v_source text;
+  v_oldest_observs timestamptz := null;
+  v_oldest_aqilevels timestamptz := null;
+  v_oldest_observed_at timestamptz := null;
 begin
   v_days := greatest(1, least(coalesce(p_retention_days, 120), 3650));
   v_bucket_hour := date_trunc('hour', coalesce(p_recorded_at, now()));
   v_source := coalesce(nullif(btrim(p_source), ''), 'uk_aq_db_size_logger_pg_cron');
+
+  if to_regclass('uk_aq_observs.observations') is not null then
+    execute 'select min(o.observed_at) from uk_aq_observs.observations o'
+      into v_oldest_observs;
+  end if;
+
+  if to_regclass('uk_aq_aqilevels.station_aqi_hourly') is not null then
+    execute 'select min(a.timestamp_hour_utc) from uk_aq_aqilevels.station_aqi_hourly a'
+      into v_oldest_aqilevels;
+  end if;
+
+  select min(v)
+    into v_oldest_observed_at
+  from (values (v_oldest_observs), (v_oldest_aqilevels)) as oldest(v);
 
   insert into uk_aq_ops.db_size_metrics_hourly (
     bucket_hour,
@@ -558,13 +605,13 @@ begin
   )
   values (
     v_bucket_hour,
-    'aggdailydb',
+    'obs_aqidb',
     current_database()::text,
     (
       select coalesce(sum(pg_database_size(pg_database.datname)), 0)::bigint
       from pg_database
     ),
-    (select min(sah.timestamp_hour_utc) from uk_aq_aggdaily.station_aqi_hourly sah),
+    v_oldest_observed_at,
     v_source,
     coalesce(p_recorded_at, now()),
     now()
@@ -590,10 +637,10 @@ $$;
 
 select cron.unschedule(jobid)
 from cron.job
-where jobname = 'uk_aq_aggdaily_db_size_metrics_hourly';
+where jobname = 'uk_aq_aqilevels_db_size_metrics_hourly';
 
 select cron.schedule(
-  'uk_aq_aggdaily_db_size_metrics_hourly',
+  'uk_aq_aqilevels_db_size_metrics_hourly',
   '2 * * * *',
   $$select * from uk_aq_ops.uk_aq_db_size_metric_sample_local();$$
 );
@@ -601,10 +648,10 @@ select cron.schedule(
 -- Daily full vacuum at 05:00 UTC.
 select cron.unschedule(jobid)
 from cron.job
-where jobname = 'uk_aq_aggdaily_vacuum_full_0500_utc';
+where jobname = 'uk_aq_aqilevels_vacuum_full_0500_utc';
 
 select cron.schedule(
-  'uk_aq_aggdaily_vacuum_full_0500_utc',
+  'uk_aq_aqilevels_vacuum_full_0500_utc',
   '0 5 * * *',
   $$vacuum (full, analyze, verbose);$$
 );
@@ -621,10 +668,28 @@ language plpgsql
 security definer
 set search_path = pg_catalog, public
 as $$
+declare
+  v_oldest_observs timestamptz := null;
+  v_oldest_aqilevels timestamptz := null;
+  v_oldest_observed_at timestamptz := null;
 begin
   if auth.role() <> 'service_role' then
     raise exception 'service_role required';
   end if;
+
+  if to_regclass('uk_aq_observs.observations') is not null then
+    execute 'select min(o.observed_at) from uk_aq_observs.observations o'
+      into v_oldest_observs;
+  end if;
+
+  if to_regclass('uk_aq_aqilevels.station_aqi_hourly') is not null then
+    execute 'select min(a.timestamp_hour_utc) from uk_aq_aqilevels.station_aqi_hourly a'
+      into v_oldest_aqilevels;
+  end if;
+
+  select min(v)
+    into v_oldest_observed_at
+  from (values (v_oldest_observs), (v_oldest_aqilevels)) as oldest(v);
 
   return query
   select
@@ -633,7 +698,7 @@ begin
       select coalesce(sum(pg_database_size(pg_database.datname)), 0)::bigint
       from pg_database
     ) as size_bytes,
-    null::timestamptz as oldest_observed_at,
+    v_oldest_observed_at as oldest_observed_at,
     now() as sampled_at;
 end;
 $$;
@@ -660,7 +725,7 @@ begin
     raise exception 'service_role required';
   end if;
 
-  if p_database_label not in ('ingestdb', 'historydb', 'aggdailydb') then
+  if p_database_label not in ('ingestdb', 'obs_aqidb') then
     raise exception 'invalid database_label: %', p_database_label;
   end if;
 
@@ -734,7 +799,103 @@ begin
 end;
 $$;
 
+create or replace function uk_aq_public.uk_aq_rpc_schema_size_metric_upsert(
+  p_database_label text,
+  p_schema_name text,
+  p_size_bytes bigint,
+  p_oldest_observed_at timestamptz default null,
+  p_recorded_at timestamptz default now(),
+  p_source text default null
+)
+returns table (rows_upserted int)
+language plpgsql
+security definer
+set search_path = uk_aq_ops, public, pg_catalog
+as $$
+declare
+  v_bucket_hour timestamptz;
+  v_rows int := 0;
+  v_source text;
+begin
+  if auth.role() <> 'service_role' then
+    raise exception 'service_role required';
+  end if;
+
+  if p_database_label not in ('obs_aqidb') then
+    raise exception 'invalid database_label: %', p_database_label;
+  end if;
+
+  if p_schema_name not in ('uk_aq_observs', 'uk_aq_aqilevels') then
+    raise exception 'invalid schema_name: %', p_schema_name;
+  end if;
+
+  if p_size_bytes is null or p_size_bytes < 0 then
+    raise exception 'size_bytes must be >= 0';
+  end if;
+
+  v_bucket_hour := date_trunc('hour', coalesce(p_recorded_at, now()));
+  v_source := coalesce(nullif(btrim(p_source), ''), 'uk_aq_db_size_logger_cloud_run');
+
+  insert into uk_aq_ops.schema_size_metrics_hourly (
+    bucket_hour,
+    database_label,
+    schema_name,
+    size_bytes,
+    oldest_observed_at,
+    source,
+    recorded_at,
+    updated_at
+  )
+  values (
+    v_bucket_hour,
+    p_database_label,
+    p_schema_name,
+    p_size_bytes,
+    p_oldest_observed_at,
+    v_source,
+    coalesce(p_recorded_at, now()),
+    now()
+  )
+  on conflict (bucket_hour, database_label, schema_name) do update set
+    size_bytes = excluded.size_bytes,
+    oldest_observed_at = excluded.oldest_observed_at,
+    source = excluded.source,
+    recorded_at = excluded.recorded_at,
+    updated_at = now();
+
+  get diagnostics v_rows = row_count;
+  return query select v_rows;
+end;
+$$;
+
+create or replace function uk_aq_public.uk_aq_rpc_schema_size_metric_cleanup(
+  p_retention_days integer default 120
+)
+returns table (rows_deleted bigint)
+language plpgsql
+security definer
+set search_path = uk_aq_ops, public, pg_catalog
+as $$
+declare
+  v_days integer;
+  v_rows bigint := 0;
+begin
+  if auth.role() <> 'service_role' then
+    raise exception 'service_role required';
+  end if;
+
+  v_days := greatest(1, least(coalesce(p_retention_days, 120), 3650));
+
+  delete from uk_aq_ops.schema_size_metrics_hourly
+  where bucket_hour < now() - make_interval(days => v_days);
+
+  get diagnostics v_rows = row_count;
+  return query select v_rows;
+end;
+$$;
+
 grant all on table uk_aq_ops.db_size_metrics_hourly to service_role;
+grant all on table uk_aq_ops.schema_size_metrics_hourly to service_role;
 
 revoke all on function uk_aq_public.uk_aq_rpc_database_size_bytes() from public;
 grant execute on function uk_aq_public.uk_aq_rpc_database_size_bytes() to service_role;
@@ -759,12 +920,36 @@ grant execute on function uk_aq_public.uk_aq_rpc_db_size_metric_upsert(
 revoke all on function uk_aq_public.uk_aq_rpc_db_size_metric_cleanup(integer) from public;
 grant execute on function uk_aq_public.uk_aq_rpc_db_size_metric_cleanup(integer) to service_role;
 
+revoke all on function uk_aq_public.uk_aq_rpc_schema_size_metric_upsert(
+  text,
+  text,
+  bigint,
+  timestamptz,
+  timestamptz,
+  text
+) from public;
+grant execute on function uk_aq_public.uk_aq_rpc_schema_size_metric_upsert(
+  text,
+  text,
+  bigint,
+  timestamptz,
+  timestamptz,
+  text
+) to service_role;
+
+revoke all on function uk_aq_public.uk_aq_rpc_schema_size_metric_cleanup(integer) from public;
+grant execute on function uk_aq_public.uk_aq_rpc_schema_size_metric_cleanup(integer) to service_role;
+
 revoke all on function uk_aq_ops.uk_aq_db_size_metric_sample_local(integer, timestamptz, text) from public;
 grant execute on function uk_aq_ops.uk_aq_db_size_metric_sample_local(integer, timestamptz, text) to service_role;
 
 revoke all on uk_aq_public.uk_aq_db_size_metrics_hourly from public;
 grant select on uk_aq_public.uk_aq_db_size_metrics_hourly to authenticated;
 grant select on uk_aq_public.uk_aq_db_size_metrics_hourly to service_role;
+
+revoke all on uk_aq_public.uk_aq_schema_size_metrics_hourly from public;
+grant select on uk_aq_public.uk_aq_schema_size_metrics_hourly to authenticated;
+grant select on uk_aq_public.uk_aq_schema_size_metrics_hourly to service_role;
 
 -- Metadata RPCs for stations_daily mirror verification/sync.
 create or replace function uk_aq_public.uk_aq_rpc_info_schema_columns(
@@ -848,7 +1033,7 @@ grant execute on function uk_aq_public.uk_aq_rpc_info_schema_primary_keys(text, 
 
 -- AQI reference/fact tables (stations first).
 
-create table if not exists uk_aq_aggdaily.aqi_standard_versions (
+create table if not exists uk_aq_aqilevels.aqi_standard_versions (
   standard_code text not null check (standard_code in ('daqi', 'eaqi')),
   version_code text not null,
   source_name text not null,
@@ -861,7 +1046,7 @@ create table if not exists uk_aq_aggdaily.aqi_standard_versions (
   primary key (standard_code, version_code)
 );
 
-create table if not exists uk_aq_aggdaily.aqi_breakpoints (
+create table if not exists uk_aq_aqilevels.aqi_breakpoints (
   standard_code text not null check (standard_code in ('daqi', 'eaqi')),
   version_code text not null,
   pollutant_code text not null check (pollutant_code in ('pm25', 'pm10', 'no2')),
@@ -884,11 +1069,11 @@ create table if not exists uk_aq_aggdaily.aqi_breakpoints (
     index_level
   ),
   foreign key (standard_code, version_code)
-    references uk_aq_aggdaily.aqi_standard_versions(standard_code, version_code),
+    references uk_aq_aqilevels.aqi_standard_versions(standard_code, version_code),
   check (range_high is null or range_high >= range_low)
 );
 
-create table if not exists uk_aq_aggdaily.station_aqi_hourly (
+create table if not exists uk_aq_aqilevels.station_aqi_hourly (
   station_id bigint not null references uk_aq_core.stations(id) on delete cascade,
   timestamp_hour_utc timestamptz not null,
 
@@ -918,9 +1103,9 @@ create table if not exists uk_aq_aggdaily.station_aqi_hourly (
 );
 
 create index if not exists station_aqi_hourly_hour_idx
-  on uk_aq_aggdaily.station_aqi_hourly (timestamp_hour_utc desc);
+  on uk_aq_aqilevels.station_aqi_hourly (timestamp_hour_utc desc);
 
-create table if not exists uk_aq_aggdaily.station_aqi_daily (
+create table if not exists uk_aq_aqilevels.station_aqi_daily (
   station_id bigint not null references uk_aq_core.stations(id) on delete cascade,
   observed_day date not null,
   standard_code text not null check (standard_code in ('daqi', 'eaqi')),
@@ -943,9 +1128,9 @@ create table if not exists uk_aq_aggdaily.station_aqi_daily (
 );
 
 create index if not exists station_aqi_daily_day_idx
-  on uk_aq_aggdaily.station_aqi_daily (observed_day desc);
+  on uk_aq_aqilevels.station_aqi_daily (observed_day desc);
 
-create table if not exists uk_aq_aggdaily.station_aqi_monthly (
+create table if not exists uk_aq_aqilevels.station_aqi_monthly (
   station_id bigint not null references uk_aq_core.stations(id) on delete cascade,
   observed_month date not null,
   standard_code text not null check (standard_code in ('daqi', 'eaqi')),
@@ -968,7 +1153,7 @@ create table if not exists uk_aq_aggdaily.station_aqi_monthly (
 );
 
 create index if not exists station_aqi_monthly_month_idx
-  on uk_aq_aggdaily.station_aqi_monthly (observed_month desc);
+  on uk_aq_aqilevels.station_aqi_monthly (observed_month desc);
 
 create table if not exists uk_aq_ops.aqi_compute_runs (
   id uuid primary key default gen_random_uuid(),
@@ -996,7 +1181,7 @@ create table if not exists uk_aq_ops.aqi_compute_runs (
 create index if not exists aqi_compute_runs_started_idx
   on uk_aq_ops.aqi_compute_runs (started_at desc);
 
-insert into uk_aq_aggdaily.aqi_standard_versions (
+insert into uk_aq_aqilevels.aqi_standard_versions (
   standard_code,
   version_code,
   source_name,
@@ -1036,7 +1221,7 @@ set
   valid_to = excluded.valid_to,
   is_active = excluded.is_active;
 
-insert into uk_aq_aggdaily.aqi_breakpoints (
+insert into uk_aq_aqilevels.aqi_breakpoints (
   standard_code,
   version_code,
   pollutant_code,
@@ -1144,7 +1329,7 @@ select
   eaqi_pm25_index_level,
   eaqi_pm10_index_level,
   updated_at
-from uk_aq_aggdaily.station_aqi_hourly;
+from uk_aq_aqilevels.station_aqi_hourly;
 alter view if exists uk_aq_public.uk_aq_station_aqi_hourly set (security_invoker = true);
 
 create or replace view uk_aq_public.uk_aq_station_aqi_daily as
@@ -1157,7 +1342,7 @@ select
   valid_hour_count,
   max_index_level,
   updated_at
-from uk_aq_aggdaily.station_aqi_daily;
+from uk_aq_aqilevels.station_aqi_daily;
 alter view if exists uk_aq_public.uk_aq_station_aqi_daily set (security_invoker = true);
 
 create or replace view uk_aq_public.uk_aq_station_aqi_monthly as
@@ -1170,7 +1355,7 @@ select
   valid_hour_count,
   max_index_level,
   updated_at
-from uk_aq_aggdaily.station_aqi_monthly;
+from uk_aq_aqilevels.station_aqi_monthly;
 alter view if exists uk_aq_public.uk_aq_station_aqi_monthly set (security_invoker = true);
 
 -- RLS / policies for AQI tables.
@@ -1187,16 +1372,16 @@ begin
       'station_aqi_monthly'
     ]::text[])
   loop
-    execute format('alter table uk_aq_aggdaily.%I enable row level security', t);
+    execute format('alter table uk_aq_aqilevels.%I enable row level security', t);
     if not exists (
       select 1
       from pg_policies p
-      where p.schemaname = 'uk_aq_aggdaily'
+      where p.schemaname = 'uk_aq_aqilevels'
         and p.tablename = t
         and p.policyname = t || '_select_authenticated'
     ) then
       execute format(
-        'create policy %I on uk_aq_aggdaily.%I for select using (auth.role() in (''authenticated'',''service_role''));',
+        'create policy %I on uk_aq_aqilevels.%I for select using (auth.role() in (''authenticated'',''service_role''));',
         t || '_select_authenticated',
         t
       );
@@ -1204,12 +1389,12 @@ begin
     if not exists (
       select 1
       from pg_policies p
-      where p.schemaname = 'uk_aq_aggdaily'
+      where p.schemaname = 'uk_aq_aqilevels'
         and p.tablename = t
         and p.policyname = t || '_write_service_role'
     ) then
       execute format(
-        'create policy %I on uk_aq_aggdaily.%I for all using (auth.role() = ''service_role'') with check (auth.role() = ''service_role'');',
+        'create policy %I on uk_aq_aqilevels.%I for all using (auth.role() = ''service_role'') with check (auth.role() = ''service_role'');',
         t || '_write_service_role',
         t
       );
@@ -1238,11 +1423,11 @@ begin
 end
 $$;
 
-grant all on table uk_aq_aggdaily.aqi_standard_versions to service_role;
-grant all on table uk_aq_aggdaily.aqi_breakpoints to service_role;
-grant all on table uk_aq_aggdaily.station_aqi_hourly to service_role;
-grant all on table uk_aq_aggdaily.station_aqi_daily to service_role;
-grant all on table uk_aq_aggdaily.station_aqi_monthly to service_role;
+grant all on table uk_aq_aqilevels.aqi_standard_versions to service_role;
+grant all on table uk_aq_aqilevels.aqi_breakpoints to service_role;
+grant all on table uk_aq_aqilevels.station_aqi_hourly to service_role;
+grant all on table uk_aq_aqilevels.station_aqi_daily to service_role;
+grant all on table uk_aq_aqilevels.station_aqi_monthly to service_role;
 grant all on table uk_aq_ops.aqi_compute_runs to service_role;
 
 revoke all on uk_aq_public.uk_aq_station_aqi_hourly from public;
@@ -1285,7 +1470,7 @@ returns table (
 )
 language plpgsql
 security definer
-set search_path = uk_aq_aggdaily, public, pg_catalog
+set search_path = uk_aq_aqilevels, public, pg_catalog
 as $$
 declare
   v_effective_date date;
@@ -1309,8 +1494,8 @@ begin
     b.range_low,
     b.range_high,
     b.uom
-  from uk_aq_aggdaily.aqi_breakpoints b
-  join uk_aq_aggdaily.aqi_standard_versions v
+  from uk_aq_aqilevels.aqi_breakpoints b
+  join uk_aq_aqilevels.aqi_standard_versions v
     on v.standard_code = b.standard_code
    and v.version_code = b.version_code
   where (p_standard_code is null or b.standard_code = p_standard_code)
@@ -1333,7 +1518,7 @@ drop function if exists uk_aq_public.uk_aq_rpc_station_aqi_hourly_upsert(
   timestamptz
 );
 
-drop function if exists uk_aq_aggdaily.uk_aq_aqi_index_lookup(
+drop function if exists uk_aq_aqilevels.uk_aq_aqi_index_lookup(
   text,
   text,
   text,
@@ -1341,7 +1526,7 @@ drop function if exists uk_aq_aggdaily.uk_aq_aqi_index_lookup(
   date
 );
 
-create or replace function uk_aq_aggdaily.uk_aq_aqi_index_lookup(
+create or replace function uk_aq_aqilevels.uk_aq_aqi_index_lookup(
   p_standard_code text,
   p_pollutant_code text,
   p_averaging_code text,
@@ -1354,13 +1539,13 @@ returns table (
 )
 language sql
 stable
-set search_path = uk_aq_aggdaily, public, pg_catalog
+set search_path = uk_aq_aqilevels, public, pg_catalog
 as $$
   select
     b.index_level,
     b.index_band
-  from uk_aq_aggdaily.aqi_breakpoints b
-  join uk_aq_aggdaily.aqi_standard_versions v
+  from uk_aq_aqilevels.aqi_breakpoints b
+  join uk_aq_aqilevels.aqi_standard_versions v
     on v.standard_code = b.standard_code
    and v.version_code = b.version_code
   where p_value is not null
@@ -1393,7 +1578,7 @@ returns table (
 )
 language plpgsql
 security definer
-set search_path = uk_aq_aggdaily, public, pg_catalog
+set search_path = uk_aq_aqilevels, public, pg_catalog
 as $$
 declare
   v_rows_attempted integer := 0;
@@ -1467,42 +1652,42 @@ begin
       eaqi_pm25.index_level as eaqi_pm25_index_level,
       eaqi_pm10.index_level as eaqi_pm10_index_level
     from incoming_base b
-    left join lateral uk_aq_aggdaily.uk_aq_aqi_index_lookup(
+    left join lateral uk_aq_aqilevels.uk_aq_aqi_index_lookup(
       'daqi',
       'no2',
       'hourly_mean',
       b.no2_hourly_mean_ugm3,
       coalesce(v_reference_effective_date, (b.timestamp_hour_utc at time zone 'UTC')::date)
     ) daqi_no2 on true
-    left join lateral uk_aq_aggdaily.uk_aq_aqi_index_lookup(
+    left join lateral uk_aq_aqilevels.uk_aq_aqi_index_lookup(
       'daqi',
       'pm25',
       'rolling_24h_mean',
       b.pm25_rolling24h_mean_ugm3,
       coalesce(v_reference_effective_date, (b.timestamp_hour_utc at time zone 'UTC')::date)
     ) daqi_pm25 on true
-    left join lateral uk_aq_aggdaily.uk_aq_aqi_index_lookup(
+    left join lateral uk_aq_aqilevels.uk_aq_aqi_index_lookup(
       'daqi',
       'pm10',
       'rolling_24h_mean',
       b.pm10_rolling24h_mean_ugm3,
       coalesce(v_reference_effective_date, (b.timestamp_hour_utc at time zone 'UTC')::date)
     ) daqi_pm10 on true
-    left join lateral uk_aq_aggdaily.uk_aq_aqi_index_lookup(
+    left join lateral uk_aq_aqilevels.uk_aq_aqi_index_lookup(
       'eaqi',
       'no2',
       'hourly_mean',
       b.no2_hourly_mean_ugm3,
       coalesce(v_reference_effective_date, (b.timestamp_hour_utc at time zone 'UTC')::date)
     ) eaqi_no2 on true
-    left join lateral uk_aq_aggdaily.uk_aq_aqi_index_lookup(
+    left join lateral uk_aq_aqilevels.uk_aq_aqi_index_lookup(
       'eaqi',
       'pm25',
       'hourly_mean',
       b.pm25_hourly_mean_ugm3,
       coalesce(v_reference_effective_date, (b.timestamp_hour_utc at time zone 'UTC')::date)
     ) eaqi_pm25 on true
-    left join lateral uk_aq_aggdaily.uk_aq_aqi_index_lookup(
+    left join lateral uk_aq_aqilevels.uk_aq_aqi_index_lookup(
       'eaqi',
       'pm10',
       'hourly_mean',
@@ -1559,7 +1744,7 @@ begin
         )
       ) as is_changed
     from dedup d
-    left join uk_aq_aggdaily.station_aqi_hourly e
+    left join uk_aq_aqilevels.station_aqi_hourly e
       on e.station_id = d.station_id
      and e.timestamp_hour_utc = d.timestamp_hour_utc
   )
@@ -1640,42 +1825,42 @@ begin
       eaqi_pm25.index_level as eaqi_pm25_index_level,
       eaqi_pm10.index_level as eaqi_pm10_index_level
     from incoming_base b
-    left join lateral uk_aq_aggdaily.uk_aq_aqi_index_lookup(
+    left join lateral uk_aq_aqilevels.uk_aq_aqi_index_lookup(
       'daqi',
       'no2',
       'hourly_mean',
       b.no2_hourly_mean_ugm3,
       coalesce(v_reference_effective_date, (b.timestamp_hour_utc at time zone 'UTC')::date)
     ) daqi_no2 on true
-    left join lateral uk_aq_aggdaily.uk_aq_aqi_index_lookup(
+    left join lateral uk_aq_aqilevels.uk_aq_aqi_index_lookup(
       'daqi',
       'pm25',
       'rolling_24h_mean',
       b.pm25_rolling24h_mean_ugm3,
       coalesce(v_reference_effective_date, (b.timestamp_hour_utc at time zone 'UTC')::date)
     ) daqi_pm25 on true
-    left join lateral uk_aq_aggdaily.uk_aq_aqi_index_lookup(
+    left join lateral uk_aq_aqilevels.uk_aq_aqi_index_lookup(
       'daqi',
       'pm10',
       'rolling_24h_mean',
       b.pm10_rolling24h_mean_ugm3,
       coalesce(v_reference_effective_date, (b.timestamp_hour_utc at time zone 'UTC')::date)
     ) daqi_pm10 on true
-    left join lateral uk_aq_aggdaily.uk_aq_aqi_index_lookup(
+    left join lateral uk_aq_aqilevels.uk_aq_aqi_index_lookup(
       'eaqi',
       'no2',
       'hourly_mean',
       b.no2_hourly_mean_ugm3,
       coalesce(v_reference_effective_date, (b.timestamp_hour_utc at time zone 'UTC')::date)
     ) eaqi_no2 on true
-    left join lateral uk_aq_aggdaily.uk_aq_aqi_index_lookup(
+    left join lateral uk_aq_aqilevels.uk_aq_aqi_index_lookup(
       'eaqi',
       'pm25',
       'hourly_mean',
       b.pm25_hourly_mean_ugm3,
       coalesce(v_reference_effective_date, (b.timestamp_hour_utc at time zone 'UTC')::date)
     ) eaqi_pm25 on true
-    left join lateral uk_aq_aggdaily.uk_aq_aqi_index_lookup(
+    left join lateral uk_aq_aqilevels.uk_aq_aqi_index_lookup(
       'eaqi',
       'pm10',
       'hourly_mean',
@@ -1693,7 +1878,7 @@ begin
     select
       d.*
     from dedup d
-    left join uk_aq_aggdaily.station_aqi_hourly e
+    left join uk_aq_aqilevels.station_aqi_hourly e
       on e.station_id = d.station_id
      and e.timestamp_hour_utc = d.timestamp_hour_utc
     where
@@ -1734,7 +1919,7 @@ begin
         )
       )
   )
-  insert into uk_aq_aggdaily.station_aqi_hourly (
+  insert into uk_aq_aqilevels.station_aqi_hourly (
     station_id,
     timestamp_hour_utc,
     no2_hourly_mean_ugm3,
@@ -1791,20 +1976,20 @@ begin
     updated_at = now()
   where
     (
-      uk_aq_aggdaily.station_aqi_hourly.no2_hourly_mean_ugm3,
-      uk_aq_aggdaily.station_aqi_hourly.pm25_hourly_mean_ugm3,
-      uk_aq_aggdaily.station_aqi_hourly.pm10_hourly_mean_ugm3,
-      uk_aq_aggdaily.station_aqi_hourly.pm25_rolling24h_mean_ugm3,
-      uk_aq_aggdaily.station_aqi_hourly.pm10_rolling24h_mean_ugm3,
-      uk_aq_aggdaily.station_aqi_hourly.no2_hourly_sample_count,
-      uk_aq_aggdaily.station_aqi_hourly.pm25_hourly_sample_count,
-      uk_aq_aggdaily.station_aqi_hourly.pm10_hourly_sample_count,
-      uk_aq_aggdaily.station_aqi_hourly.daqi_no2_index_level,
-      uk_aq_aggdaily.station_aqi_hourly.daqi_pm25_rolling24h_index_level,
-      uk_aq_aggdaily.station_aqi_hourly.daqi_pm10_rolling24h_index_level,
-      uk_aq_aggdaily.station_aqi_hourly.eaqi_no2_index_level,
-      uk_aq_aggdaily.station_aqi_hourly.eaqi_pm25_index_level,
-      uk_aq_aggdaily.station_aqi_hourly.eaqi_pm10_index_level
+      uk_aq_aqilevels.station_aqi_hourly.no2_hourly_mean_ugm3,
+      uk_aq_aqilevels.station_aqi_hourly.pm25_hourly_mean_ugm3,
+      uk_aq_aqilevels.station_aqi_hourly.pm10_hourly_mean_ugm3,
+      uk_aq_aqilevels.station_aqi_hourly.pm25_rolling24h_mean_ugm3,
+      uk_aq_aqilevels.station_aqi_hourly.pm10_rolling24h_mean_ugm3,
+      uk_aq_aqilevels.station_aqi_hourly.no2_hourly_sample_count,
+      uk_aq_aqilevels.station_aqi_hourly.pm25_hourly_sample_count,
+      uk_aq_aqilevels.station_aqi_hourly.pm10_hourly_sample_count,
+      uk_aq_aqilevels.station_aqi_hourly.daqi_no2_index_level,
+      uk_aq_aqilevels.station_aqi_hourly.daqi_pm25_rolling24h_index_level,
+      uk_aq_aqilevels.station_aqi_hourly.daqi_pm10_rolling24h_index_level,
+      uk_aq_aqilevels.station_aqi_hourly.eaqi_no2_index_level,
+      uk_aq_aqilevels.station_aqi_hourly.eaqi_pm25_index_level,
+      uk_aq_aqilevels.station_aqi_hourly.eaqi_pm10_index_level
     )
     is distinct from
     (
@@ -1853,7 +2038,7 @@ returns table (
 )
 language plpgsql
 security definer
-set search_path = uk_aq_aggdaily, public, pg_catalog
+set search_path = uk_aq_aqilevels, public, pg_catalog
 as $$
 declare
   v_start_hour timestamptz;
@@ -1886,7 +2071,7 @@ begin
   v_start_month := date_trunc('month', v_start_day::timestamp)::date;
   v_end_month := date_trunc('month', v_end_day::timestamp)::date;
 
-  delete from uk_aq_aggdaily.station_aqi_daily d
+  delete from uk_aq_aqilevels.station_aqi_daily d
   where d.observed_day between v_start_day and v_end_day
     and (p_station_ids is null or d.station_id = any(p_station_ids));
 
@@ -1897,7 +2082,7 @@ begin
       'daqi'::text as standard_code,
       'pm25'::text as pollutant_code,
       h.daqi_pm25_rolling24h_index_level as index_level
-    from uk_aq_aggdaily.station_aqi_hourly h
+    from uk_aq_aqilevels.station_aqi_hourly h
     where h.timestamp_hour_utc >= v_start_day::timestamptz
       and h.timestamp_hour_utc < (v_end_day + 1)::timestamptz
       and (p_station_ids is null or h.station_id = any(p_station_ids))
@@ -1908,7 +2093,7 @@ begin
       'daqi'::text,
       'pm10'::text,
       h.daqi_pm10_rolling24h_index_level
-    from uk_aq_aggdaily.station_aqi_hourly h
+    from uk_aq_aqilevels.station_aqi_hourly h
     where h.timestamp_hour_utc >= v_start_day::timestamptz
       and h.timestamp_hour_utc < (v_end_day + 1)::timestamptz
       and (p_station_ids is null or h.station_id = any(p_station_ids))
@@ -1919,7 +2104,7 @@ begin
       'daqi'::text,
       'no2'::text,
       h.daqi_no2_index_level
-    from uk_aq_aggdaily.station_aqi_hourly h
+    from uk_aq_aqilevels.station_aqi_hourly h
     where h.timestamp_hour_utc >= v_start_day::timestamptz
       and h.timestamp_hour_utc < (v_end_day + 1)::timestamptz
       and (p_station_ids is null or h.station_id = any(p_station_ids))
@@ -1930,7 +2115,7 @@ begin
       'eaqi'::text,
       'pm25'::text,
       h.eaqi_pm25_index_level
-    from uk_aq_aggdaily.station_aqi_hourly h
+    from uk_aq_aqilevels.station_aqi_hourly h
     where h.timestamp_hour_utc >= v_start_day::timestamptz
       and h.timestamp_hour_utc < (v_end_day + 1)::timestamptz
       and (p_station_ids is null or h.station_id = any(p_station_ids))
@@ -1941,7 +2126,7 @@ begin
       'eaqi'::text,
       'pm10'::text,
       h.eaqi_pm10_index_level
-    from uk_aq_aggdaily.station_aqi_hourly h
+    from uk_aq_aqilevels.station_aqi_hourly h
     where h.timestamp_hour_utc >= v_start_day::timestamptz
       and h.timestamp_hour_utc < (v_end_day + 1)::timestamptz
       and (p_station_ids is null or h.station_id = any(p_station_ids))
@@ -1952,7 +2137,7 @@ begin
       'eaqi'::text,
       'no2'::text,
       h.eaqi_no2_index_level
-    from uk_aq_aggdaily.station_aqi_hourly h
+    from uk_aq_aqilevels.station_aqi_hourly h
     where h.timestamp_hour_utc >= v_start_day::timestamptz
       and h.timestamp_hour_utc < (v_end_day + 1)::timestamptz
       and (p_station_ids is null or h.station_id = any(p_station_ids))
@@ -2008,7 +2193,7 @@ begin
       k.standard_code,
       k.pollutant_code
   )
-  insert into uk_aq_aggdaily.station_aqi_daily (
+  insert into uk_aq_aqilevels.station_aqi_daily (
     station_id,
     observed_day,
     standard_code,
@@ -2037,7 +2222,7 @@ begin
 
   get diagnostics v_daily_rows = row_count;
 
-  delete from uk_aq_aggdaily.station_aqi_monthly m
+  delete from uk_aq_aqilevels.station_aqi_monthly m
   where m.observed_month between v_start_month and v_end_month
     and (p_station_ids is null or m.station_id = any(p_station_ids));
 
@@ -2048,7 +2233,7 @@ begin
       'daqi'::text as standard_code,
       'pm25'::text as pollutant_code,
       h.daqi_pm25_rolling24h_index_level as index_level
-    from uk_aq_aggdaily.station_aqi_hourly h
+    from uk_aq_aqilevels.station_aqi_hourly h
     where h.timestamp_hour_utc >= v_start_month::timestamptz
       and h.timestamp_hour_utc < (v_end_month + interval '1 month')::timestamptz
       and (p_station_ids is null or h.station_id = any(p_station_ids))
@@ -2059,7 +2244,7 @@ begin
       'daqi'::text,
       'pm10'::text,
       h.daqi_pm10_rolling24h_index_level
-    from uk_aq_aggdaily.station_aqi_hourly h
+    from uk_aq_aqilevels.station_aqi_hourly h
     where h.timestamp_hour_utc >= v_start_month::timestamptz
       and h.timestamp_hour_utc < (v_end_month + interval '1 month')::timestamptz
       and (p_station_ids is null or h.station_id = any(p_station_ids))
@@ -2070,7 +2255,7 @@ begin
       'daqi'::text,
       'no2'::text,
       h.daqi_no2_index_level
-    from uk_aq_aggdaily.station_aqi_hourly h
+    from uk_aq_aqilevels.station_aqi_hourly h
     where h.timestamp_hour_utc >= v_start_month::timestamptz
       and h.timestamp_hour_utc < (v_end_month + interval '1 month')::timestamptz
       and (p_station_ids is null or h.station_id = any(p_station_ids))
@@ -2081,7 +2266,7 @@ begin
       'eaqi'::text,
       'pm25'::text,
       h.eaqi_pm25_index_level
-    from uk_aq_aggdaily.station_aqi_hourly h
+    from uk_aq_aqilevels.station_aqi_hourly h
     where h.timestamp_hour_utc >= v_start_month::timestamptz
       and h.timestamp_hour_utc < (v_end_month + interval '1 month')::timestamptz
       and (p_station_ids is null or h.station_id = any(p_station_ids))
@@ -2092,7 +2277,7 @@ begin
       'eaqi'::text,
       'pm10'::text,
       h.eaqi_pm10_index_level
-    from uk_aq_aggdaily.station_aqi_hourly h
+    from uk_aq_aqilevels.station_aqi_hourly h
     where h.timestamp_hour_utc >= v_start_month::timestamptz
       and h.timestamp_hour_utc < (v_end_month + interval '1 month')::timestamptz
       and (p_station_ids is null or h.station_id = any(p_station_ids))
@@ -2103,7 +2288,7 @@ begin
       'eaqi'::text,
       'no2'::text,
       h.eaqi_no2_index_level
-    from uk_aq_aggdaily.station_aqi_hourly h
+    from uk_aq_aqilevels.station_aqi_hourly h
     where h.timestamp_hour_utc >= v_start_month::timestamptz
       and h.timestamp_hour_utc < (v_end_month + interval '1 month')::timestamptz
       and (p_station_ids is null or h.station_id = any(p_station_ids))
@@ -2159,7 +2344,7 @@ begin
       k.standard_code,
       k.pollutant_code
   )
-  insert into uk_aq_aggdaily.station_aqi_monthly (
+  insert into uk_aq_aqilevels.station_aqi_monthly (
     station_id,
     observed_month,
     standard_code,
@@ -2339,7 +2524,7 @@ revoke all on function uk_aq_public.uk_aq_rpc_aqi_breakpoints_active(
   text,
   text
 ) from public;
-revoke all on function uk_aq_aggdaily.uk_aq_aqi_index_lookup(
+revoke all on function uk_aq_aqilevels.uk_aq_aqi_index_lookup(
   text,
   text,
   text,

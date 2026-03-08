@@ -4,7 +4,7 @@ create schema if not exists uk_aq_ops;
 
 create table if not exists uk_aq_ops.db_size_metrics_hourly (
   bucket_hour timestamptz not null,
-  database_label text not null check (database_label in ('ingestdb', 'historydb', 'aggdailydb')),
+  database_label text not null check (database_label in ('ingestdb', 'obs_aqidb')),
   database_name text not null,
   size_bytes bigint not null check (size_bytes >= 0),
   oldest_observed_at timestamptz,
@@ -17,6 +17,20 @@ create table if not exists uk_aq_ops.db_size_metrics_hourly (
 
 create index if not exists db_size_metrics_hourly_database_label_idx
   on uk_aq_ops.db_size_metrics_hourly (database_label, bucket_hour desc);
+
+create table if not exists uk_aq_ops.r2_domain_size_metrics_hourly (
+  bucket_hour timestamptz not null,
+  domain_name text not null check (domain_name in ('observations', 'aqilevels')),
+  size_bytes bigint not null check (size_bytes >= 0),
+  source text not null default 'uk_aq_db_size_logger_cloud_run',
+  recorded_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (bucket_hour, domain_name)
+);
+
+create index if not exists r2_domain_size_metrics_hourly_domain_idx
+  on uk_aq_ops.r2_domain_size_metrics_hourly (domain_name, bucket_hour desc);
 
 do $$
 declare
@@ -206,6 +220,7 @@ select cron.schedule(
 
 grant usage on schema uk_aq_ops to service_role;
 grant all on table uk_aq_ops.db_size_metrics_hourly to service_role;
+grant all on table uk_aq_ops.r2_domain_size_metrics_hourly to service_role;
 
 revoke all on function uk_aq_ops.uk_aq_db_size_metric_sample_local(integer, timestamptz, text) from public;
 grant execute on function uk_aq_ops.uk_aq_db_size_metric_sample_local(integer, timestamptz, text) to service_role;

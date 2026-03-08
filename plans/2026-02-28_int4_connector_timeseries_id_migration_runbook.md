@@ -51,13 +51,13 @@ Apply in this order.
 
 4. HISTORY DB schema refresh:
 ```sql
-\i schemas/history_db/uk_aq_history_schema.sql
-\i schemas/history_db/history_db_dualwrite_bootstrap.sql
+\i schemas/observs_db/uk_aq_observs_schema.sql
+\i schemas/observs_db/observs_db_dualwrite_bootstrap.sql
 ```
 
 5. Ops RPC refresh:
 - In ingest DB, apply `CIC-test-uk-aq-ops/sql/ingest_db_ops_rpcs.sql`
-- In history DB, apply `CIC-test-uk-aq-ops/sql/history_db_ops_rpcs.sql`
+- In history DB, apply `CIC-test-uk-aq-ops/sql/observs_db_ops_rpcs.sql`
 
 6. Ingest helper refresh:
 - Apply `CIC-test-uk-aq-ingest/supabase/uk_aq_station_snapshot.sql`

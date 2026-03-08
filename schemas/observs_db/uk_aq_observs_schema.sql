@@ -1,7 +1,7 @@
--- UK-AQ history schema (history-only observations in a separate schema).
+-- UK-AQ observs schema (observs-only observations in a separate schema).
 -- Safe to rerun; uses IF NOT EXISTS where appropriate.
 
-create schema if not exists uk_aq_history;
+create schema if not exists uk_aq_observs;
 create schema if not exists uk_aq_core;
 create schema if not exists uk_aq_public;
 create schema if not exists uk_aq_ops;
@@ -333,21 +333,21 @@ alter default privileges in schema uk_aq_core
 
 set search_path = public;
 
-create table if not exists uk_aq_history.observations (
+create table if not exists uk_aq_observs.observations (
   connector_id integer not null,
   timeseries_id integer not null,
   observed_at timestamptz not null,
   value double precision
 ) partition by range (observed_at);
 
-create table if not exists uk_aq_history.observations_default
-  partition of uk_aq_history.observations default;
+create table if not exists uk_aq_observs.observations_default
+  partition of uk_aq_observs.observations default;
 
-comment on table uk_aq_history.observations_default is
+comment on table uk_aq_observs.observations_default is
   'Catch-all/default partition for out-of-range rows. Non-zero rows are treated as a maintenance alert signal.';
 
-create index if not exists uk_aq_history_observations_default_observed_at_brin
-  on uk_aq_history.observations_default using brin (observed_at);
+create index if not exists uk_aq_observs_observations_default_observed_at_brin
+  on uk_aq_observs.observations_default using brin (observed_at);
 
 do $$
 declare
@@ -361,8 +361,8 @@ begin
     v_partition_name := format('observations_%s', to_char(v_day, 'YYYYMMDD'));
 
     execute format(
-      'create table if not exists uk_aq_history.%I '
-      'partition of uk_aq_history.observations '
+      'create table if not exists uk_aq_observs.%I '
+      'partition of uk_aq_observs.observations '
       'for values from (%L) to (%L)',
       v_partition_name,
       format('%s 00:00:00+00', v_day),
@@ -370,40 +370,40 @@ begin
     );
 
     execute format(
-      'create index if not exists %I on uk_aq_history.%I using brin (observed_at)',
+      'create index if not exists %I on uk_aq_observs.%I using brin (observed_at)',
       v_partition_name || '_observed_at_brin_idx',
       v_partition_name
     );
 
     if v_day between (v_today_utc - 2) and (v_today_utc + 3) then
       execute format(
-        'create unique index if not exists %I on uk_aq_history.%I (connector_id, timeseries_id, observed_at)',
+        'create unique index if not exists %I on uk_aq_observs.%I (connector_id, timeseries_id, observed_at)',
         v_partition_name || '_hot_key_uidx',
         v_partition_name
       );
     else
       execute format(
-        'drop index if exists uk_aq_history.%I',
+        'drop index if exists uk_aq_observs.%I',
         v_partition_name || '_hot_key_uidx'
       );
     end if;
   end loop;
 end $$;
 
--- RLS: history access is service_role only (Edge Functions / server).
-alter table if exists uk_aq_history.observations enable row level security;
+-- RLS: observs access is service_role only (Edge Functions / server).
+alter table if exists uk_aq_observs.observations enable row level security;
 
 do $$
 begin
   if not exists (
     select 1
     from pg_policies p
-    where p.schemaname = 'uk_aq_history'
+    where p.schemaname = 'uk_aq_observs'
       and p.tablename = 'observations'
-      and p.policyname = 'uk_aq_history_observations_service_role'
+      and p.policyname = 'uk_aq_observs_observations_service_role'
   ) then
     execute
-      'create policy uk_aq_history_observations_service_role on uk_aq_history.observations '
+      'create policy uk_aq_observs_observations_service_role on uk_aq_observs.observations '
       'for all using (auth.role() = ''service_role'') '
       'with check (auth.role() = ''service_role'');';
   end if;
@@ -411,7 +411,7 @@ end $$;
 
 create table if not exists uk_aq_ops.db_size_metrics_hourly (
   bucket_hour timestamptz not null,
-  database_label text not null check (database_label in ('ingestdb', 'historydb', 'aggdailydb')),
+  database_label text not null check (database_label in ('ingestdb', 'obs_aqidb')),
   database_name text not null,
   size_bytes bigint not null check (size_bytes >= 0),
   oldest_observed_at timestamptz,
@@ -441,15 +441,15 @@ alter view if exists uk_aq_public.uk_aq_db_size_metrics_hourly set (security_inv
 
 create extension if not exists pg_cron with schema extensions;
 
--- Schedule daily history observations VACUUM FULL at 05:30 UTC.
+-- Schedule daily observs observations VACUUM FULL at 05:30 UTC.
 select cron.unschedule(jobid)
 from cron.job
-where jobname = 'uk_aq_history_observations_vacuum_full_0530_utc';
+where jobname = 'uk_aq_observs_observations_vacuum_full_0530_utc';
 
 select cron.schedule(
-  'uk_aq_history_observations_vacuum_full_0530_utc',
+  'uk_aq_observs_observations_vacuum_full_0530_utc',
   '30 5 * * *',
-  $$vacuum (full, analyze, verbose) uk_aq_history.observations;$$
+  $$vacuum (full, analyze, verbose) uk_aq_observs.observations;$$
 );
 
 create or replace function uk_aq_ops.uk_aq_db_size_metric_sample_local(
@@ -463,7 +463,7 @@ returns table (
 )
 language plpgsql
 security definer
-set search_path = uk_aq_ops, uk_aq_history, public, pg_catalog
+set search_path = uk_aq_ops, uk_aq_observs, public, pg_catalog
 as $$
 declare
   v_days integer;
@@ -471,10 +471,27 @@ declare
   v_rows_upserted int := 0;
   v_rows_deleted bigint := 0;
   v_source text;
+  v_oldest_observs timestamptz := null;
+  v_oldest_aqilevels timestamptz := null;
+  v_oldest_observed_at timestamptz := null;
 begin
   v_days := greatest(1, least(coalesce(p_retention_days, 120), 3650));
   v_bucket_hour := date_trunc('hour', coalesce(p_recorded_at, now()));
   v_source := coalesce(nullif(btrim(p_source), ''), 'uk_aq_db_size_logger_pg_cron');
+
+  if to_regclass('uk_aq_observs.observations') is not null then
+    execute 'select min(o.observed_at) from uk_aq_observs.observations o'
+      into v_oldest_observs;
+  end if;
+
+  if to_regclass('uk_aq_aqilevels.station_aqi_hourly') is not null then
+    execute 'select min(a.timestamp_hour_utc) from uk_aq_aqilevels.station_aqi_hourly a'
+      into v_oldest_aqilevels;
+  end if;
+
+  select min(v)
+    into v_oldest_observed_at
+  from (values (v_oldest_observs), (v_oldest_aqilevels)) as oldest(v);
 
   insert into uk_aq_ops.db_size_metrics_hourly (
     bucket_hour,
@@ -488,13 +505,13 @@ begin
   )
   values (
     v_bucket_hour,
-    'historydb',
+    'obs_aqidb',
     current_database()::text,
     (
       select coalesce(sum(pg_database_size(pg_database.datname)), 0)::bigint
       from pg_database
     ),
-    (select min(o.observed_at) from uk_aq_history.observations o),
+    v_oldest_observed_at,
     v_source,
     coalesce(p_recorded_at, now()),
     now()
@@ -520,10 +537,10 @@ $$;
 
 select cron.unschedule(jobid)
 from cron.job
-where jobname = 'uk_aq_history_db_size_metrics_hourly';
+where jobname = 'uk_aq_obs_aqidb_db_size_metrics_hourly';
 
 select cron.schedule(
-  'uk_aq_history_db_size_metrics_hourly',
+  'uk_aq_obs_aqidb_db_size_metrics_hourly',
   '2 * * * *',
   $$select * from uk_aq_ops.uk_aq_db_size_metric_sample_local();$$
 );
@@ -535,8 +552,8 @@ revoke all on uk_aq_public.uk_aq_db_size_metrics_hourly from public;
 grant select on uk_aq_public.uk_aq_db_size_metrics_hourly to authenticated;
 grant select on uk_aq_public.uk_aq_db_size_metrics_hourly to service_role;
 
-grant usage on schema uk_aq_history to service_role;
+grant usage on schema uk_aq_observs to service_role;
 grant usage on schema uk_aq_public to service_role;
 grant usage on schema uk_aq_ops to service_role;
-grant all on table uk_aq_history.observations to service_role;
+grant all on table uk_aq_observs.observations to service_role;
 grant all on table uk_aq_ops.db_size_metrics_hourly to service_role;

@@ -43,7 +43,7 @@ This document summarizes the schema defined in `schemas/uk_air_quality_schema.sq
 - `observations`: raw time-value pairs for each timeseries (observed_at timestamptz, value, status flag). Partitioned by integer `connector_id` with primary key `(connector_id, timeseries_id, observed_at)` where both ids are integer.
 
 ## History schema (uk_aq_history)
-- Defined in `schemas/uk_aq_history_schema.sql`.
+- Defined in `schemas/observs_db/uk_aq_observs_schema.sql`.
 - `uk_aq_history.observations`: history-only fact table keyed by integer internal ids (`connector_id`, `timeseries_id`, `observed_at`) with `value` (no `status_id`).
 - Partitioned by UTC day range on `observed_at`, with `uk_aq_history.observations_default` as the out-of-range catch-all partition.
 - Hot partition index policy: UTC today plus previous 2 UTC days keep unique btree key `(connector_id, timeseries_id, observed_at)` plus BRIN on `observed_at`; cold partitions keep BRIN only.
@@ -52,6 +52,19 @@ This document summarizes the schema defined in `schemas/uk_air_quality_schema.sq
   - non-hot/missing partitions use update-then-insert fallback on the partitioned parent.
 - RLS: service_role only (intended for Edge Functions / server-side access).
 - The history schema is additive only; no existing tables are moved out of `public` yet.
+
+## Ops size telemetry (dashboard support)
+- `uk_aq_ops.db_size_metrics_hourly`: hourly DB cluster size points keyed by `database_label` (target hard-cut labels: `ingestdb`, `obs_aqidb`).
+- `uk_aq_ops.schema_size_metrics_hourly`: hourly schema size points for `uk_aq_observs` and `uk_aq_aqilevels` with per-schema oldest timestamp.
+- `uk_aq_ops.r2_domain_size_metrics_hourly`: hourly R2 History domain size points for `observations` and `aqilevels`.
+- Public read views:
+  - `uk_aq_public.uk_aq_db_size_metrics_hourly`
+  - `uk_aq_public.uk_aq_schema_size_metrics_hourly`
+  - `uk_aq_public.uk_aq_r2_domain_size_metrics_hourly`
+- Service-role writer RPCs:
+  - `uk_aq_rpc_db_size_metric_upsert` / `uk_aq_rpc_db_size_metric_cleanup`
+  - `uk_aq_rpc_schema_size_metric_upsert` / `uk_aq_rpc_schema_size_metric_cleanup`
+  - `uk_aq_rpc_r2_domain_size_metric_upsert` / `uk_aq_rpc_r2_domain_size_metric_cleanup`
 
 ## PM2.5 target tracking (optional)
 - `pm25_population_exposure`: yearly Population Exposure Indicator (PEI) series with deltas and % change vs 2018 baseline.

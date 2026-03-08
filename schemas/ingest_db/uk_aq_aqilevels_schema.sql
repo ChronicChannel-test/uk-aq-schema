@@ -1,8 +1,8 @@
--- Ingest DB: uk_aq_aggdaily helper schema objects for station AQI precompute/sync.
+-- Ingest DB: uk_aq_aqilevels helper schema objects for station AQI precompute/sync.
 
-create schema if not exists uk_aq_aggdaily;
+create schema if not exists uk_aq_aqilevels;
 
-create table if not exists uk_aq_aggdaily.aqi_standard_versions (
+create table if not exists uk_aq_aqilevels.aqi_standard_versions (
   standard_code text not null check (standard_code in ('daqi', 'eaqi')),
   version_code text not null,
   source_name text not null,
@@ -15,7 +15,7 @@ create table if not exists uk_aq_aggdaily.aqi_standard_versions (
   primary key (standard_code, version_code)
 );
 
-create table if not exists uk_aq_aggdaily.aqi_breakpoints (
+create table if not exists uk_aq_aqilevels.aqi_breakpoints (
   standard_code text not null check (standard_code in ('daqi', 'eaqi')),
   version_code text not null,
   pollutant_code text not null check (pollutant_code in ('pm25', 'pm10', 'no2')),
@@ -38,11 +38,11 @@ create table if not exists uk_aq_aggdaily.aqi_breakpoints (
     index_level
   ),
   foreign key (standard_code, version_code)
-    references uk_aq_aggdaily.aqi_standard_versions(standard_code, version_code),
+    references uk_aq_aqilevels.aqi_standard_versions(standard_code, version_code),
   check (range_high is null or range_high >= range_low)
 );
 
-create table if not exists uk_aq_aggdaily.station_aqi_hourly_helper (
+create table if not exists uk_aq_aqilevels.station_aqi_hourly_helper (
   station_id bigint not null references uk_aq_core.stations(id) on delete cascade,
   timestamp_hour_utc timestamptz not null,
   no2_hourly_mean_ugm3 double precision,
@@ -59,9 +59,9 @@ create table if not exists uk_aq_aggdaily.station_aqi_hourly_helper (
 );
 
 create index if not exists station_aqi_hourly_helper_hour_idx
-  on uk_aq_aggdaily.station_aqi_hourly_helper (timestamp_hour_utc desc);
+  on uk_aq_aqilevels.station_aqi_hourly_helper (timestamp_hour_utc desc);
 
-insert into uk_aq_aggdaily.aqi_standard_versions (
+insert into uk_aq_aqilevels.aqi_standard_versions (
   standard_code,
   version_code,
   source_name,
@@ -101,7 +101,7 @@ set
   valid_to = excluded.valid_to,
   is_active = excluded.is_active;
 
-insert into uk_aq_aggdaily.aqi_breakpoints (
+insert into uk_aq_aqilevels.aqi_breakpoints (
   standard_code,
   version_code,
   pollutant_code,
@@ -204,17 +204,17 @@ begin
       'station_aqi_hourly_helper'
     ]::text[])
   loop
-    execute format('alter table uk_aq_aggdaily.%I enable row level security', t);
+    execute format('alter table uk_aq_aqilevels.%I enable row level security', t);
 
     if not exists (
       select 1
       from pg_policies p
-      where p.schemaname = 'uk_aq_aggdaily'
+      where p.schemaname = 'uk_aq_aqilevels'
         and p.tablename = t
         and p.policyname = t || '_select_service_role'
     ) then
       execute format(
-        'create policy %I on uk_aq_aggdaily.%I for select using (auth.role() = ''service_role'');',
+        'create policy %I on uk_aq_aqilevels.%I for select using (auth.role() = ''service_role'');',
         t || '_select_service_role',
         t
       );
@@ -223,12 +223,12 @@ begin
     if not exists (
       select 1
       from pg_policies p
-      where p.schemaname = 'uk_aq_aggdaily'
+      where p.schemaname = 'uk_aq_aqilevels'
         and p.tablename = t
         and p.policyname = t || '_write_service_role'
     ) then
       execute format(
-        'create policy %I on uk_aq_aggdaily.%I for all using (auth.role() = ''service_role'') with check (auth.role() = ''service_role'');',
+        'create policy %I on uk_aq_aqilevels.%I for all using (auth.role() = ''service_role'') with check (auth.role() = ''service_role'');',
         t || '_write_service_role',
         t
       );
@@ -237,7 +237,7 @@ begin
 end
 $$;
 
-drop function if exists uk_aq_aggdaily.uk_aq_aqi_index_lookup(
+drop function if exists uk_aq_aqilevels.uk_aq_aqi_index_lookup(
   text,
   text,
   text,
@@ -245,7 +245,7 @@ drop function if exists uk_aq_aggdaily.uk_aq_aqi_index_lookup(
   date
 );
 
-create or replace function uk_aq_aggdaily.uk_aq_aqi_index_lookup(
+create or replace function uk_aq_aqilevels.uk_aq_aqi_index_lookup(
   p_standard_code text,
   p_pollutant_code text,
   p_averaging_code text,
@@ -258,13 +258,13 @@ returns table (
 )
 language sql
 stable
-set search_path = uk_aq_aggdaily, public, pg_catalog
+set search_path = uk_aq_aqilevels, public, pg_catalog
 as $$
   select
     b.index_level,
     b.index_band
-  from uk_aq_aggdaily.aqi_breakpoints b
-  join uk_aq_aggdaily.aqi_standard_versions v
+  from uk_aq_aqilevels.aqi_breakpoints b
+  join uk_aq_aqilevels.aqi_standard_versions v
     on v.standard_code = b.standard_code
    and v.version_code = b.version_code
   where p_value is not null
@@ -281,12 +281,12 @@ as $$
   limit 1;
 $$;
 
-grant usage on schema uk_aq_aggdaily to service_role;
-grant all on table uk_aq_aggdaily.aqi_standard_versions to service_role;
-grant all on table uk_aq_aggdaily.aqi_breakpoints to service_role;
-grant all on table uk_aq_aggdaily.station_aqi_hourly_helper to service_role;
+grant usage on schema uk_aq_aqilevels to service_role;
+grant all on table uk_aq_aqilevels.aqi_standard_versions to service_role;
+grant all on table uk_aq_aqilevels.aqi_breakpoints to service_role;
+grant all on table uk_aq_aqilevels.station_aqi_hourly_helper to service_role;
 
-revoke all on function uk_aq_aggdaily.uk_aq_aqi_index_lookup(
+revoke all on function uk_aq_aqilevels.uk_aq_aqi_index_lookup(
   text,
   text,
   text,

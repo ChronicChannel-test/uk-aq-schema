@@ -28,7 +28,7 @@ This repo defines the UK AQ database structure: schemas, tables, views, and secu
 No scripted commands were found in this repo. There is no preferred schema-apply command yet; use your preferred SQL tooling (confirm).
 
 ## Where to start
-- **Core schema files**: `schemas/uk_aq_core_schema.sql`, `schemas/uk_aq_raw_schema.sql`, `schemas/uk_aq_history_schema.sql`.
+- **Core schema files**: `schemas/uk_aq_core_schema.sql`, `schemas/uk_aq_raw_schema.sql`, `schemas/observs_db/uk_aq_observs_schema.sql`.
 - **Public views**: `schemas/uk_aq_public_views.sql`.
 - **Security**: `schemas/uk_aq_security.sql`.
 - **Docs**: `system_docs/`.

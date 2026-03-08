@@ -7,11 +7,11 @@
 ## Schema Placement Policy
 - Canonical table/function/view DDL must be authored in this repo under `schemas/`.
 - Do not keep schema changes only in ingest/ops worker-local SQL files.
-- For AggDaily DB changes, always update the main schema file:
-  - `schemas/aggdaily_db/uk_aq_aggdaily_schema.sql`
+- For AQI levels schema changes, always update the main schema file:
+  - `schemas/aqilevels_db/uk_aq_aqilevels_schema.sql`
 - If a targeted apply file is used, keep it in this repo under:
-  - `schemas/aggdaily_db/`
-  and keep it aligned with the main AggDaily schema.
+  - `schemas/aqilevels_db/`
+  and keep it aligned with the main AQI levels schema.
 
 ## R2/Cloudflare Cache Cost Policy
 - For AQI history served via R2 + Cloudflare, assume cost is primarily driven by R2 operation counts (especially Class B reads) and Worker request volume, not R2 bandwidth egress.

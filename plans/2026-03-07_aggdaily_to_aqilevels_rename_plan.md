@@ -42,7 +42,7 @@ No direct impact from rename itself on:
 - `schemas/ingest_db/uk_aq_aggdaily_schema.sql`
 - `schemas/ingest_db/uk_aq_rpc.sql`
 - `schemas/ingest_db/uk_aq_ops_schema.sql`
-- `schemas/history_db/uk_aq_history_schema.sql`
+- `schemas/observs_db/uk_aq_observs_schema.sql`
 
 ### Ops repo
 - `workers/uk_aq_db_size_logger_cloud_run/run_job.ts`

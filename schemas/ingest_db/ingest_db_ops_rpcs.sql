@@ -136,9 +136,9 @@ revoke execute on function uk_aq_public.uk_aq_rpc_observations_delete_hour_bucke
 revoke execute on function uk_aq_public.uk_aq_rpc_observations_delete_hour_bucket(integer, timestamptz, int) from anon, authenticated;
 grant execute on function uk_aq_public.uk_aq_rpc_observations_delete_hour_bucket(integer, timestamptz, int) to service_role;
 
-drop function if exists uk_aq_public.uk_aq_rpc_history_outbox_enqueue_hour_bucket(bigint, timestamptz, int);
-drop function if exists uk_aq_public.uk_aq_rpc_history_outbox_enqueue_hour_bucket(integer, timestamptz, int);
-create or replace function uk_aq_public.uk_aq_rpc_history_outbox_enqueue_hour_bucket(
+drop function if exists uk_aq_public.uk_aq_rpc_observs_outbox_enqueue_hour_bucket(bigint, timestamptz, int);
+drop function if exists uk_aq_public.uk_aq_rpc_observs_outbox_enqueue_hour_bucket(integer, timestamptz, int);
+create or replace function uk_aq_public.uk_aq_rpc_observs_outbox_enqueue_hour_bucket(
   p_connector_id integer,
   p_hour_start timestamptz,
   p_chunk_size int default 1000
@@ -219,7 +219,7 @@ begin
     group by ((sr.rn - 1) / v_chunk_size)
   ),
   inserted as (
-    insert into uk_aq_raw.history_observation_outbox (
+    insert into uk_aq_raw.observs_observation_outbox (
       payload,
       next_attempt_at
     )
@@ -245,7 +245,7 @@ begin
 end;
 $$;
 
-revoke execute on function uk_aq_public.uk_aq_rpc_history_outbox_enqueue_hour_bucket(integer, timestamptz, int) from public;
-revoke execute on function uk_aq_public.uk_aq_rpc_history_outbox_enqueue_hour_bucket(integer, timestamptz, int) from anon, authenticated;
-grant execute on function uk_aq_public.uk_aq_rpc_history_outbox_enqueue_hour_bucket(integer, timestamptz, int) to service_role;
+revoke execute on function uk_aq_public.uk_aq_rpc_observs_outbox_enqueue_hour_bucket(integer, timestamptz, int) from public;
+revoke execute on function uk_aq_public.uk_aq_rpc_observs_outbox_enqueue_hour_bucket(integer, timestamptz, int) from anon, authenticated;
+grant execute on function uk_aq_public.uk_aq_rpc_observs_outbox_enqueue_hour_bucket(integer, timestamptz, int) to service_role;
 grant usage on schema uk_aq_public to service_role;

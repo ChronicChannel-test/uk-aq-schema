@@ -16,7 +16,7 @@ returns table (
 )
 language plpgsql
 security definer
-set search_path = uk_aq_history, extensions, public, pg_catalog
+set search_path = uk_aq_observs, extensions, public, pg_catalog
 as $$
 begin
   set local timezone = 'UTC';
@@ -53,7 +53,7 @@ begin
         ),
         'hex'
       ) as row_hash_hex
-    from uk_aq_history.observations o
+    from uk_aq_observs.observations o
     where o.observed_at >= window_start
       and o.observed_at < window_end
   )
@@ -76,7 +76,7 @@ begin
 end;
 $$;
 
-drop function if exists uk_aq_public.uk_aq_rpc_history_observations_upsert(jsonb);
+drop function if exists uk_aq_public.uk_aq_rpc_observs_observations_upsert(jsonb);
 drop function if exists uk_aq_public.uk_aq_rpc_station_aqi_hourly_source(
   timestamptz,
   timestamptz,
@@ -96,7 +96,7 @@ returns table (
 )
 language plpgsql
 security definer
-set search_path = uk_aq_history, uk_aq_core, public, pg_catalog
+set search_path = uk_aq_observs, uk_aq_core, public, pg_catalog
 as $$
 declare
   v_window_start timestamptz;
@@ -125,7 +125,7 @@ begin
       op.code as pollutant_code,
       o.observed_at,
       o.value
-    from uk_aq_history.observations o
+    from uk_aq_observs.observations o
     join uk_aq_core.timeseries ts
       on ts.id = o.timeseries_id
      and ts.connector_id = o.connector_id
@@ -201,10 +201,28 @@ language plpgsql
 security definer
 set search_path = pg_catalog, public
 as $$
+declare
+  v_oldest_observs timestamptz := null;
+  v_oldest_aqilevels timestamptz := null;
+  v_oldest_observed_at timestamptz := null;
 begin
   if auth.role() <> 'service_role' then
     raise exception 'service_role required';
   end if;
+
+  if to_regclass('uk_aq_observs.observations') is not null then
+    execute 'select min(o.observed_at) from uk_aq_observs.observations o'
+      into v_oldest_observs;
+  end if;
+
+  if to_regclass('uk_aq_aqilevels.station_aqi_hourly') is not null then
+    execute 'select min(a.timestamp_hour_utc) from uk_aq_aqilevels.station_aqi_hourly a'
+      into v_oldest_aqilevels;
+  end if;
+
+  select min(v)
+    into v_oldest_observed_at
+  from (values (v_oldest_observs), (v_oldest_aqilevels)) as oldest(v);
 
   return query
   select
@@ -213,8 +231,76 @@ begin
       select coalesce(sum(pg_database_size(pg_database.datname)), 0)::bigint
       from pg_database
     ) as size_bytes,
-    (select min(o.observed_at) from uk_aq_history.observations o) as oldest_observed_at,
+    v_oldest_observed_at as oldest_observed_at,
     now() as sampled_at;
+end;
+$$;
+
+drop function if exists uk_aq_public.uk_aq_rpc_schema_size_bytes(text);
+create or replace function uk_aq_public.uk_aq_rpc_schema_size_bytes(
+  p_schema_name text default null
+)
+returns table (
+  schema_name text,
+  size_bytes bigint,
+  oldest_observed_at timestamptz,
+  sampled_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  v_schema_names text[];
+  v_schema text;
+  v_size_bytes bigint;
+  v_oldest_observed_at timestamptz;
+begin
+  if auth.role() <> 'service_role' then
+    raise exception 'service_role required';
+  end if;
+
+  if p_schema_name is null or btrim(p_schema_name) = '' then
+    v_schema_names := array['uk_aq_observs', 'uk_aq_aqilevels'];
+  elsif p_schema_name in ('uk_aq_observs', 'uk_aq_aqilevels') then
+    v_schema_names := array[p_schema_name];
+  else
+    raise exception 'invalid schema_name: %', p_schema_name;
+  end if;
+
+  foreach v_schema in array v_schema_names loop
+    v_size_bytes := 0;
+    v_oldest_observed_at := null;
+
+    if to_regnamespace(v_schema) is not null then
+      execute format(
+        $sql$
+          select coalesce(sum(pg_total_relation_size(c.oid)), 0)::bigint
+          from pg_class c
+          join pg_namespace n on n.oid = c.relnamespace
+          where n.nspname = %L
+            and c.relkind in ('r', 'p', 'm', 't')
+        $sql$,
+        v_schema
+      ) into v_size_bytes;
+
+      if v_schema = 'uk_aq_observs'
+         and to_regclass('uk_aq_observs.observations') is not null then
+        execute 'select min(o.observed_at) from uk_aq_observs.observations o'
+          into v_oldest_observed_at;
+      elsif v_schema = 'uk_aq_aqilevels'
+            and to_regclass('uk_aq_aqilevels.station_aqi_hourly') is not null then
+        execute 'select min(a.timestamp_hour_utc) from uk_aq_aqilevels.station_aqi_hourly a'
+          into v_oldest_observed_at;
+      end if;
+    end if;
+
+    schema_name := v_schema;
+    size_bytes := coalesce(v_size_bytes, 0);
+    oldest_observed_at := v_oldest_observed_at;
+    sampled_at := now();
+    return next;
+  end loop;
 end;
 $$;
 
@@ -248,7 +334,7 @@ begin
     raise exception 'service_role required';
   end if;
 
-  if p_database_label not in ('ingestdb', 'historydb', 'aggdailydb') then
+  if p_database_label not in ('ingestdb', 'obs_aqidb') then
     raise exception 'invalid database_label: %', p_database_label;
   end if;
 
@@ -323,11 +409,11 @@ begin
 end;
 $$;
 
-create or replace function uk_aq_public.uk_aq_rpc_history_observations_upsert(rows jsonb)
+create or replace function uk_aq_public.uk_aq_rpc_observs_observations_upsert(rows jsonb)
 returns table(observations_upserted int)
 language plpgsql
 security definer
-set search_path = uk_aq_history, uk_aq_raw, public, pg_catalog
+set search_path = uk_aq_observs, uk_aq_raw, public, pg_catalog
 as $$
 declare
   v_count int := 0;
@@ -393,7 +479,7 @@ begin
       p.observed_at
   ),
   updated as (
-    update uk_aq_history.observations o
+    update uk_aq_observs.observations o
     set value = i.value
     from input_rows i
     where o.connector_id = i.connector_id
@@ -405,7 +491,7 @@ begin
     returning 1
   ),
   inserted as (
-    insert into uk_aq_history.observations (
+    insert into uk_aq_observs.observations (
       connector_id,
       timeseries_id,
       observed_at,
@@ -417,7 +503,7 @@ begin
       i.observed_at,
       i.value
     from input_rows i
-    left join uk_aq_history.observations o
+    left join uk_aq_observs.observations o
       on o.connector_id = i.connector_id
      and o.timeseries_id = i.timeseries_id
      and o.observed_at = i.observed_at
@@ -436,7 +522,7 @@ begin
     floor(extract(epoch from (clock_timestamp() - v_started_at)) * 1000)::int
   );
 
-  insert into uk_aq_raw.history_rpc_metrics_minute (
+  insert into uk_aq_raw.observs_rpc_metrics_minute (
     bucket_minute,
     endpoint,
     calls,
@@ -448,7 +534,7 @@ begin
   )
   values (
     date_trunc('minute', now()),
-    'rpc/uk_aq_rpc_history_observations_upsert',
+    'rpc/uk_aq_rpc_observs_observations_upsert',
     1,
     v_input_rows,
     v_payload_bytes,
@@ -458,19 +544,19 @@ begin
   )
   on conflict (bucket_minute, endpoint)
   do update set
-    calls = uk_aq_raw.history_rpc_metrics_minute.calls + 1,
-    rows_input = uk_aq_raw.history_rpc_metrics_minute.rows_input + excluded.rows_input,
-    payload_bytes = uk_aq_raw.history_rpc_metrics_minute.payload_bytes + excluded.payload_bytes,
-    rows_upserted = uk_aq_raw.history_rpc_metrics_minute.rows_upserted + excluded.rows_upserted,
-    duration_ms_sum = uk_aq_raw.history_rpc_metrics_minute.duration_ms_sum + excluded.duration_ms_sum,
-    duration_ms_max = greatest(uk_aq_raw.history_rpc_metrics_minute.duration_ms_max, excluded.duration_ms_max);
+    calls = uk_aq_raw.observs_rpc_metrics_minute.calls + 1,
+    rows_input = uk_aq_raw.observs_rpc_metrics_minute.rows_input + excluded.rows_input,
+    payload_bytes = uk_aq_raw.observs_rpc_metrics_minute.payload_bytes + excluded.payload_bytes,
+    rows_upserted = uk_aq_raw.observs_rpc_metrics_minute.rows_upserted + excluded.rows_upserted,
+    duration_ms_sum = uk_aq_raw.observs_rpc_metrics_minute.duration_ms_sum + excluded.duration_ms_sum,
+    duration_ms_max = greatest(uk_aq_raw.observs_rpc_metrics_minute.duration_ms_max, excluded.duration_ms_max);
 
   return query select coalesce(v_count, 0);
 end;
 $$;
 
-drop function if exists uk_aq_public.uk_aq_rpc_history_ensure_daily_partitions(date, date);
-create or replace function uk_aq_public.uk_aq_rpc_history_ensure_daily_partitions(
+drop function if exists uk_aq_public.uk_aq_rpc_observs_ensure_daily_partitions(date, date);
+create or replace function uk_aq_public.uk_aq_rpc_observs_ensure_daily_partitions(
   start_day_utc date,
   end_day_utc date
 )
@@ -482,7 +568,7 @@ returns table (
 )
 language plpgsql
 security definer
-set search_path = uk_aq_history, public, pg_catalog
+set search_path = uk_aq_observs, public, pg_catalog
 as $$
 declare
   v_today_utc date := (now() at time zone 'UTC')::date;
@@ -510,24 +596,24 @@ begin
     raise exception 'partition ensure range too large (max 400 days)';
   end if;
 
-  create table if not exists uk_aq_history.observations_default
-    partition of uk_aq_history.observations default;
+  create table if not exists uk_aq_observs.observations_default
+    partition of uk_aq_observs.observations default;
 
-  create index if not exists uk_aq_history_observations_default_observed_at_brin
-    on uk_aq_history.observations_default using brin (observed_at);
+  create index if not exists uk_aq_observs_observations_default_observed_at_brin
+    on uk_aq_observs.observations_default using brin (observed_at);
 
   for v_day in
     select generate_series(start_day_utc, end_day_utc, interval '1 day')::date
   loop
     v_partition_name := format('observations_%s', to_char(v_day, 'YYYYMMDD'));
 
-    select to_regclass(format('uk_aq_history.%I', v_partition_name)) is not null
+    select to_regclass(format('uk_aq_observs.%I', v_partition_name)) is not null
     into v_partition_exists;
 
     if not v_partition_exists then
       execute format(
-        'create table uk_aq_history.%I '
-        'partition of uk_aq_history.observations '
+        'create table uk_aq_observs.%I '
+        'partition of uk_aq_observs.observations '
         'for values from (%L) to (%L)',
         v_partition_name,
         format('%s 00:00:00+00', v_day),
@@ -539,20 +625,20 @@ begin
       select 1
       from pg_class idx
       join pg_namespace n on n.oid = idx.relnamespace
-      where n.nspname = 'uk_aq_history'
+      where n.nspname = 'uk_aq_observs'
         and idx.relname = v_partition_name || '_observed_at_brin_idx'
     )
     into v_brin_exists;
 
     execute format(
-      'create index if not exists %I on uk_aq_history.%I using brin (observed_at)',
+      'create index if not exists %I on uk_aq_observs.%I using brin (observed_at)',
       v_partition_name || '_observed_at_brin_idx',
       v_partition_name
     );
 
     if v_day between v_today_utc and v_hot_future_end_day_utc then
       execute format(
-        'create unique index if not exists %I on uk_aq_history.%I (connector_id, timeseries_id, observed_at)',
+        'create unique index if not exists %I on uk_aq_observs.%I (connector_id, timeseries_id, observed_at)',
         v_partition_name || '_hot_key_uidx',
         v_partition_name
       );
@@ -567,8 +653,8 @@ begin
 end;
 $$;
 
-drop function if exists uk_aq_public.uk_aq_rpc_history_enforce_hot_cold_indexes(date, date);
-create or replace function uk_aq_public.uk_aq_rpc_history_enforce_hot_cold_indexes(
+drop function if exists uk_aq_public.uk_aq_rpc_observs_enforce_hot_cold_indexes(date, date);
+create or replace function uk_aq_public.uk_aq_rpc_observs_enforce_hot_cold_indexes(
   hot_start_day_utc date,
   hot_end_day_utc date
 )
@@ -582,7 +668,7 @@ returns table (
 )
 language plpgsql
 security definer
-set search_path = uk_aq_history, public, pg_catalog
+set search_path = uk_aq_observs, public, pg_catalog
 as $$
 declare
   v_part record;
@@ -614,7 +700,7 @@ begin
     join pg_class c on c.oid = i.inhrelid
     join pg_class p on p.oid = i.inhparent
     join pg_namespace n on n.oid = c.relnamespace
-    where n.nspname = 'uk_aq_history'
+    where n.nspname = 'uk_aq_observs'
       and p.relname = 'observations'
       and c.relname ~ '^observations_[0-9]{8}$'
     order by c.relname
@@ -626,13 +712,13 @@ begin
       select 1
       from pg_class idx
       join pg_namespace n on n.oid = idx.relnamespace
-      where n.nspname = 'uk_aq_history'
+      where n.nspname = 'uk_aq_observs'
         and idx.relname = v_part.partition_name || '_observed_at_brin_idx'
     )
     into v_brin_exists;
 
     execute format(
-      'create index if not exists %I on uk_aq_history.%I using brin (observed_at)',
+      'create index if not exists %I on uk_aq_observs.%I using brin (observed_at)',
       v_part.partition_name || '_observed_at_brin_idx',
       v_part.partition_name
     );
@@ -641,14 +727,14 @@ begin
       select 1
       from pg_class idx
       join pg_namespace n on n.oid = idx.relnamespace
-      where n.nspname = 'uk_aq_history'
+      where n.nspname = 'uk_aq_observs'
         and idx.relname = v_part.partition_name || '_hot_key_uidx'
     )
     into v_hot_key_exists;
 
     if v_is_hot then
       execute format(
-        'create unique index if not exists %I on uk_aq_history.%I (connector_id, timeseries_id, observed_at)',
+        'create unique index if not exists %I on uk_aq_observs.%I (connector_id, timeseries_id, observed_at)',
         v_part.partition_name || '_hot_key_uidx',
         v_part.partition_name
       );
@@ -657,11 +743,11 @@ begin
       for v_con in
         select con.conname
         from pg_constraint con
-        where con.conrelid = format('uk_aq_history.%I', v_part.partition_name)::regclass
+        where con.conrelid = format('uk_aq_observs.%I', v_part.partition_name)::regclass
           and con.contype in ('p', 'u')
       loop
         execute format(
-          'alter table uk_aq_history.%I drop constraint if exists %I',
+          'alter table uk_aq_observs.%I drop constraint if exists %I',
           v_part.partition_name,
           v_con.conname
         );
@@ -675,11 +761,11 @@ begin
         join pg_class tbl on tbl.oid = i.indrelid
         join pg_namespace n on n.oid = tbl.relnamespace
         join pg_am am on am.oid = idx.relam
-        where n.nspname = 'uk_aq_history'
+        where n.nspname = 'uk_aq_observs'
           and tbl.relname = v_part.partition_name
           and am.amname = 'btree'
       loop
-        execute format('drop index if exists uk_aq_history.%I', v_idx.index_name);
+        execute format('drop index if exists uk_aq_observs.%I', v_idx.index_name);
         v_drop_count := v_drop_count + 1;
       end loop;
     end if;
@@ -695,8 +781,8 @@ begin
 end;
 $$;
 
-drop function if exists uk_aq_public.uk_aq_rpc_history_observations_default_diagnostics(integer);
-create or replace function uk_aq_public.uk_aq_rpc_history_observations_default_diagnostics(
+drop function if exists uk_aq_public.uk_aq_rpc_observs_observations_default_diagnostics(integer);
+create or replace function uk_aq_public.uk_aq_rpc_observs_observations_default_diagnostics(
   top_n integer default 20
 )
 returns table (
@@ -707,7 +793,7 @@ returns table (
 )
 language plpgsql
 security definer
-set search_path = uk_aq_history, public, pg_catalog
+set search_path = uk_aq_observs, public, pg_catalog
 as $$
 declare
   v_top_n integer := greatest(1, least(coalesce(top_n, 20), 200));
@@ -722,14 +808,14 @@ begin
       count(*)::bigint as default_row_count,
       min(observed_at) as min_observed_at,
       max(observed_at) as max_observed_at
-    from uk_aq_history.observations_default
+    from uk_aq_observs.observations_default
   ),
   offenders as (
     select
       o.connector_id,
       o.timeseries_id,
       count(*)::bigint as row_count
-    from uk_aq_history.observations_default o
+    from uk_aq_observs.observations_default o
     group by o.connector_id, o.timeseries_id
     order by count(*) desc, o.connector_id, o.timeseries_id
     limit v_top_n
@@ -756,8 +842,8 @@ begin
 end;
 $$;
 
-drop function if exists uk_aq_public.uk_aq_rpc_history_drop_candidates(timestamptz);
-create or replace function uk_aq_public.uk_aq_rpc_history_drop_candidates(
+drop function if exists uk_aq_public.uk_aq_rpc_observs_drop_candidates(timestamptz);
+create or replace function uk_aq_public.uk_aq_rpc_observs_drop_candidates(
   cutoff_utc timestamptz
 )
 returns table (
@@ -768,7 +854,7 @@ returns table (
 )
 language plpgsql
 security definer
-set search_path = uk_aq_history, public, pg_catalog
+set search_path = uk_aq_observs, public, pg_catalog
 as $$
 begin
   set local timezone = 'UTC';
@@ -790,7 +876,7 @@ begin
     join pg_class c on c.oid = i.inhrelid
     join pg_class p on p.oid = i.inhparent
     join pg_namespace n on n.oid = c.relnamespace
-    where n.nspname = 'uk_aq_history'
+    where n.nspname = 'uk_aq_observs'
       and p.relname = 'observations'
       and c.relname ~ '^observations_[0-9]{8}$'
   ),
@@ -813,8 +899,8 @@ begin
 end;
 $$;
 
-drop function if exists uk_aq_public.uk_aq_rpc_history_drop_partition(text);
-create or replace function uk_aq_public.uk_aq_rpc_history_drop_partition(
+drop function if exists uk_aq_public.uk_aq_rpc_observs_drop_partition(text);
+create or replace function uk_aq_public.uk_aq_rpc_observs_drop_partition(
   p_partition_name text
 )
 returns table (
@@ -822,7 +908,7 @@ returns table (
 )
 language plpgsql
 security definer
-set search_path = uk_aq_history, public, pg_catalog
+set search_path = uk_aq_observs, public, pg_catalog
 as $$
 declare
   v_exists boolean;
@@ -840,7 +926,7 @@ begin
     raise exception 'refusing to drop default partition';
   end if;
 
-  select to_regclass(format('uk_aq_history.%I', p_partition_name)) is not null
+  select to_regclass(format('uk_aq_observs.%I', p_partition_name)) is not null
   into v_exists;
 
   if not v_exists then
@@ -854,17 +940,17 @@ begin
     join pg_class child on child.oid = i.inhrelid
     join pg_class parent on parent.oid = i.inhparent
     join pg_namespace n on n.oid = child.relnamespace
-    where n.nspname = 'uk_aq_history'
+    where n.nspname = 'uk_aq_observs'
       and parent.relname = 'observations'
       and child.relname = p_partition_name
   )
   into v_is_child;
 
   if not v_is_child then
-    raise exception 'partition % is not a child of uk_aq_history.observations', p_partition_name;
+    raise exception 'partition % is not a child of uk_aq_observs.observations', p_partition_name;
   end if;
 
-  execute format('drop table uk_aq_history.%I', p_partition_name);
+  execute format('drop table uk_aq_observs.%I', p_partition_name);
 
   return query select true;
 end;
@@ -953,6 +1039,10 @@ revoke execute on function uk_aq_public.uk_aq_rpc_database_size_bytes() from pub
 revoke execute on function uk_aq_public.uk_aq_rpc_database_size_bytes() from anon, authenticated;
 grant execute on function uk_aq_public.uk_aq_rpc_database_size_bytes() to service_role;
 
+revoke execute on function uk_aq_public.uk_aq_rpc_schema_size_bytes(text) from public;
+revoke execute on function uk_aq_public.uk_aq_rpc_schema_size_bytes(text) from anon, authenticated;
+grant execute on function uk_aq_public.uk_aq_rpc_schema_size_bytes(text) to service_role;
+
 revoke execute on function uk_aq_public.uk_aq_rpc_db_size_metric_upsert(
   text,
   text,
@@ -998,29 +1088,29 @@ grant execute on function uk_aq_public.uk_aq_rpc_station_aqi_hourly_source(
   bigint[]
 ) to service_role;
 
-revoke execute on function uk_aq_public.uk_aq_rpc_history_observations_upsert(jsonb) from public;
-revoke execute on function uk_aq_public.uk_aq_rpc_history_observations_upsert(jsonb) from anon, authenticated;
-grant execute on function uk_aq_public.uk_aq_rpc_history_observations_upsert(jsonb) to service_role;
+revoke execute on function uk_aq_public.uk_aq_rpc_observs_observations_upsert(jsonb) from public;
+revoke execute on function uk_aq_public.uk_aq_rpc_observs_observations_upsert(jsonb) from anon, authenticated;
+grant execute on function uk_aq_public.uk_aq_rpc_observs_observations_upsert(jsonb) to service_role;
 
-revoke execute on function uk_aq_public.uk_aq_rpc_history_ensure_daily_partitions(date, date) from public;
-revoke execute on function uk_aq_public.uk_aq_rpc_history_ensure_daily_partitions(date, date) from anon, authenticated;
-grant execute on function uk_aq_public.uk_aq_rpc_history_ensure_daily_partitions(date, date) to service_role;
+revoke execute on function uk_aq_public.uk_aq_rpc_observs_ensure_daily_partitions(date, date) from public;
+revoke execute on function uk_aq_public.uk_aq_rpc_observs_ensure_daily_partitions(date, date) from anon, authenticated;
+grant execute on function uk_aq_public.uk_aq_rpc_observs_ensure_daily_partitions(date, date) to service_role;
 
-revoke execute on function uk_aq_public.uk_aq_rpc_history_enforce_hot_cold_indexes(date, date) from public;
-revoke execute on function uk_aq_public.uk_aq_rpc_history_enforce_hot_cold_indexes(date, date) from anon, authenticated;
-grant execute on function uk_aq_public.uk_aq_rpc_history_enforce_hot_cold_indexes(date, date) to service_role;
+revoke execute on function uk_aq_public.uk_aq_rpc_observs_enforce_hot_cold_indexes(date, date) from public;
+revoke execute on function uk_aq_public.uk_aq_rpc_observs_enforce_hot_cold_indexes(date, date) from anon, authenticated;
+grant execute on function uk_aq_public.uk_aq_rpc_observs_enforce_hot_cold_indexes(date, date) to service_role;
 
-revoke execute on function uk_aq_public.uk_aq_rpc_history_observations_default_diagnostics(integer) from public;
-revoke execute on function uk_aq_public.uk_aq_rpc_history_observations_default_diagnostics(integer) from anon, authenticated;
-grant execute on function uk_aq_public.uk_aq_rpc_history_observations_default_diagnostics(integer) to service_role;
+revoke execute on function uk_aq_public.uk_aq_rpc_observs_observations_default_diagnostics(integer) from public;
+revoke execute on function uk_aq_public.uk_aq_rpc_observs_observations_default_diagnostics(integer) from anon, authenticated;
+grant execute on function uk_aq_public.uk_aq_rpc_observs_observations_default_diagnostics(integer) to service_role;
 
-revoke execute on function uk_aq_public.uk_aq_rpc_history_drop_candidates(timestamptz) from public;
-revoke execute on function uk_aq_public.uk_aq_rpc_history_drop_candidates(timestamptz) from anon, authenticated;
-grant execute on function uk_aq_public.uk_aq_rpc_history_drop_candidates(timestamptz) to service_role;
+revoke execute on function uk_aq_public.uk_aq_rpc_observs_drop_candidates(timestamptz) from public;
+revoke execute on function uk_aq_public.uk_aq_rpc_observs_drop_candidates(timestamptz) from anon, authenticated;
+grant execute on function uk_aq_public.uk_aq_rpc_observs_drop_candidates(timestamptz) to service_role;
 
-revoke execute on function uk_aq_public.uk_aq_rpc_history_drop_partition(text) from public;
-revoke execute on function uk_aq_public.uk_aq_rpc_history_drop_partition(text) from anon, authenticated;
-grant execute on function uk_aq_public.uk_aq_rpc_history_drop_partition(text) to service_role;
+revoke execute on function uk_aq_public.uk_aq_rpc_observs_drop_partition(text) from public;
+revoke execute on function uk_aq_public.uk_aq_rpc_observs_drop_partition(text) from anon, authenticated;
+grant execute on function uk_aq_public.uk_aq_rpc_observs_drop_partition(text) to service_role;
 
 revoke execute on function uk_aq_public.uk_aq_rpc_info_schema_columns(text, text[]) from public;
 revoke execute on function uk_aq_public.uk_aq_rpc_info_schema_columns(text, text[]) from anon, authenticated;

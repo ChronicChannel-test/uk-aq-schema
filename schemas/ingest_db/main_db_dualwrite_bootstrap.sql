@@ -6,7 +6,7 @@ create extension if not exists pgcrypto;
 create schema if not exists uk_aq_raw;
 create schema if not exists uk_aq_public;
 
-create table if not exists uk_aq_raw.history_observation_outbox (
+create table if not exists uk_aq_raw.observs_observation_outbox (
   id uuid primary key default gen_random_uuid(),
   created_at timestamptz not null default now(),
   next_attempt_at timestamptz not null default now(),
@@ -15,13 +15,13 @@ create table if not exists uk_aq_raw.history_observation_outbox (
   payload jsonb not null
 );
 
-create index if not exists history_observation_outbox_next_attempt_at_idx
-  on uk_aq_raw.history_observation_outbox (next_attempt_at);
+create index if not exists observs_observation_outbox_next_attempt_at_idx
+  on uk_aq_raw.observs_observation_outbox (next_attempt_at);
 
-create index if not exists history_observation_outbox_created_at_idx
-  on uk_aq_raw.history_observation_outbox (created_at);
+create index if not exists observs_observation_outbox_created_at_idx
+  on uk_aq_raw.observs_observation_outbox (created_at);
 
-create table if not exists uk_aq_raw.history_sync_receipt_daily (
+create table if not exists uk_aq_raw.observs_sync_receipt_daily (
   connector_id integer not null,
   timeseries_id integer not null,
   observed_day date not null,
@@ -29,11 +29,11 @@ create table if not exists uk_aq_raw.history_sync_receipt_daily (
   primary key (connector_id, timeseries_id, observed_day)
 );
 
-create index if not exists history_sync_receipt_daily_observed_day_idx
-  on uk_aq_raw.history_sync_receipt_daily (observed_day);
+create index if not exists observs_sync_receipt_daily_observed_day_idx
+  on uk_aq_raw.observs_sync_receipt_daily (observed_day);
 
-alter table uk_aq_raw.history_observation_outbox enable row level security;
-alter table uk_aq_raw.history_sync_receipt_daily enable row level security;
+alter table uk_aq_raw.observs_observation_outbox enable row level security;
+alter table uk_aq_raw.observs_sync_receipt_daily enable row level security;
 
 do $$
 begin
@@ -41,11 +41,11 @@ begin
     select 1
     from pg_policies
     where schemaname = 'uk_aq_raw'
-      and tablename = 'history_observation_outbox'
-      and policyname = 'history_observation_outbox_select_service_role'
+      and tablename = 'observs_observation_outbox'
+      and policyname = 'observs_observation_outbox_select_service_role'
   ) then
-    execute 'create policy history_observation_outbox_select_service_role '
-      'on uk_aq_raw.history_observation_outbox '
+    execute 'create policy observs_observation_outbox_select_service_role '
+      'on uk_aq_raw.observs_observation_outbox '
       'for select using (auth.role() = ''service_role'')';
   end if;
 
@@ -53,11 +53,11 @@ begin
     select 1
     from pg_policies
     where schemaname = 'uk_aq_raw'
-      and tablename = 'history_observation_outbox'
-      and policyname = 'history_observation_outbox_write_service_role'
+      and tablename = 'observs_observation_outbox'
+      and policyname = 'observs_observation_outbox_write_service_role'
   ) then
-    execute 'create policy history_observation_outbox_write_service_role '
-      'on uk_aq_raw.history_observation_outbox '
+    execute 'create policy observs_observation_outbox_write_service_role '
+      'on uk_aq_raw.observs_observation_outbox '
       'for all using (auth.role() = ''service_role'') '
       'with check (auth.role() = ''service_role'')';
   end if;
@@ -66,11 +66,11 @@ begin
     select 1
     from pg_policies
     where schemaname = 'uk_aq_raw'
-      and tablename = 'history_sync_receipt_daily'
-      and policyname = 'history_sync_receipt_daily_select_service_role'
+      and tablename = 'observs_sync_receipt_daily'
+      and policyname = 'observs_sync_receipt_daily_select_service_role'
   ) then
-    execute 'create policy history_sync_receipt_daily_select_service_role '
-      'on uk_aq_raw.history_sync_receipt_daily '
+    execute 'create policy observs_sync_receipt_daily_select_service_role '
+      'on uk_aq_raw.observs_sync_receipt_daily '
       'for select using (auth.role() = ''service_role'')';
   end if;
 
@@ -78,17 +78,17 @@ begin
     select 1
     from pg_policies
     where schemaname = 'uk_aq_raw'
-      and tablename = 'history_sync_receipt_daily'
-      and policyname = 'history_sync_receipt_daily_write_service_role'
+      and tablename = 'observs_sync_receipt_daily'
+      and policyname = 'observs_sync_receipt_daily_write_service_role'
   ) then
-    execute 'create policy history_sync_receipt_daily_write_service_role '
-      'on uk_aq_raw.history_sync_receipt_daily '
+    execute 'create policy observs_sync_receipt_daily_write_service_role '
+      'on uk_aq_raw.observs_sync_receipt_daily '
       'for all using (auth.role() = ''service_role'') '
       'with check (auth.role() = ''service_role'')';
   end if;
 end $$;
 
-create or replace function uk_aq_public.uk_aq_rpc_history_outbox_enqueue(entries jsonb)
+create or replace function uk_aq_public.uk_aq_rpc_observs_outbox_enqueue(entries jsonb)
 returns table(rows_enqueued int)
 language plpgsql
 security definer
@@ -109,7 +109,7 @@ begin
     return;
   end if;
 
-  insert into uk_aq_raw.history_observation_outbox (
+  insert into uk_aq_raw.observs_observation_outbox (
     payload,
     next_attempt_at
   )
@@ -127,7 +127,7 @@ begin
 end;
 $$;
 
-create or replace function uk_aq_public.uk_aq_rpc_history_outbox_claim(batch_limit int default 10)
+create or replace function uk_aq_public.uk_aq_rpc_observs_outbox_claim(batch_limit int default 10)
 returns table(
   id uuid,
   payload jsonb,
@@ -148,14 +148,14 @@ begin
       o.id,
       o.next_attempt_at,
       o.created_at
-    from uk_aq_raw.history_observation_outbox o
+    from uk_aq_raw.observs_observation_outbox o
     where o.next_attempt_at <= now()
     order by o.next_attempt_at asc, o.created_at asc
     for update skip locked
     limit greatest(coalesce(batch_limit, 10), 1)
   ),
   claimed as (
-    update uk_aq_raw.history_observation_outbox o
+    update uk_aq_raw.observs_observation_outbox o
     set next_attempt_at = now() + interval '5 minutes'
     from due
     where o.id = due.id
@@ -168,7 +168,7 @@ begin
 end;
 $$;
 
-create or replace function uk_aq_public.uk_aq_rpc_history_outbox_resolve(resolutions jsonb)
+create or replace function uk_aq_public.uk_aq_rpc_observs_outbox_resolve(resolutions jsonb)
 returns table(rows_resolved int)
 language plpgsql
 security definer
@@ -204,24 +204,24 @@ begin
     where item ? 'id'
   ),
   deleted as (
-    delete from uk_aq_raw.history_observation_outbox o
+    delete from uk_aq_raw.observs_observation_outbox o
     using incoming i
     where i.ok = true
       and o.id = i.id
     returning o.id
   ),
   failed as (
-    update uk_aq_raw.history_observation_outbox o
+    update uk_aq_raw.observs_observation_outbox o
     set
       attempts = o.attempts + 1,
       last_error = case
         when (o.attempts + 1) >= 20 then
           concat(
             '[dead_letter_threshold_reached] ',
-            coalesce(i.error_message, o.last_error, 'history delivery failed')
+            coalesce(i.error_message, o.last_error, 'observs delivery failed')
           )
         else
-          coalesce(i.error_message, o.last_error, 'history delivery failed')
+          coalesce(i.error_message, o.last_error, 'observs delivery failed')
       end,
       next_attempt_at = now() + make_interval(
         secs => case
@@ -250,7 +250,7 @@ begin
 end;
 $$;
 
-create or replace function uk_aq_public.uk_aq_rpc_history_sync_receipt_daily_upsert(rows jsonb)
+create or replace function uk_aq_public.uk_aq_rpc_observs_sync_receipt_daily_upsert(rows jsonb)
 returns table(rows_upserted int)
 language plpgsql
 security definer
@@ -271,7 +271,7 @@ begin
     return;
   end if;
 
-  insert into uk_aq_raw.history_sync_receipt_daily (
+  insert into uk_aq_raw.observs_sync_receipt_daily (
     connector_id,
     timeseries_id,
     observed_day,
@@ -299,23 +299,23 @@ begin
 end;
 $$;
 
-revoke all on table uk_aq_raw.history_observation_outbox from public, anon, authenticated;
-revoke all on table uk_aq_raw.history_sync_receipt_daily from public, anon, authenticated;
-grant all on table uk_aq_raw.history_observation_outbox to service_role;
-grant all on table uk_aq_raw.history_sync_receipt_daily to service_role;
+revoke all on table uk_aq_raw.observs_observation_outbox from public, anon, authenticated;
+revoke all on table uk_aq_raw.observs_sync_receipt_daily from public, anon, authenticated;
+grant all on table uk_aq_raw.observs_observation_outbox to service_role;
+grant all on table uk_aq_raw.observs_sync_receipt_daily to service_role;
 
 grant usage on schema uk_aq_raw to service_role;
 grant usage on schema uk_aq_public to service_role;
 
-revoke all on function uk_aq_public.uk_aq_rpc_history_outbox_enqueue(jsonb) from public;
-revoke all on function uk_aq_public.uk_aq_rpc_history_outbox_claim(int) from public;
-revoke all on function uk_aq_public.uk_aq_rpc_history_outbox_resolve(jsonb) from public;
-revoke all on function uk_aq_public.uk_aq_rpc_history_sync_receipt_daily_upsert(jsonb) from public;
+revoke all on function uk_aq_public.uk_aq_rpc_observs_outbox_enqueue(jsonb) from public;
+revoke all on function uk_aq_public.uk_aq_rpc_observs_outbox_claim(int) from public;
+revoke all on function uk_aq_public.uk_aq_rpc_observs_outbox_resolve(jsonb) from public;
+revoke all on function uk_aq_public.uk_aq_rpc_observs_sync_receipt_daily_upsert(jsonb) from public;
 
-grant execute on function uk_aq_public.uk_aq_rpc_history_outbox_enqueue(jsonb) to service_role;
-grant execute on function uk_aq_public.uk_aq_rpc_history_outbox_claim(int) to service_role;
-grant execute on function uk_aq_public.uk_aq_rpc_history_outbox_resolve(jsonb) to service_role;
-grant execute on function uk_aq_public.uk_aq_rpc_history_sync_receipt_daily_upsert(jsonb) to service_role;
+grant execute on function uk_aq_public.uk_aq_rpc_observs_outbox_enqueue(jsonb) to service_role;
+grant execute on function uk_aq_public.uk_aq_rpc_observs_outbox_claim(int) to service_role;
+grant execute on function uk_aq_public.uk_aq_rpc_observs_outbox_resolve(jsonb) to service_role;
+grant execute on function uk_aq_public.uk_aq_rpc_observs_sync_receipt_daily_upsert(jsonb) to service_role;
 
 -- Phase B backup ops objects (ingest prune safety gate + resumable export checkpoints).
 
@@ -485,7 +485,7 @@ create table if not exists uk_aq_ops.prune_day_gates (
   backup_total_bytes bigint,
   backup_completed_at timestamptz,
   aggregate_done boolean not null default false,
-  history_repair_status text not null default 'not_required',
+  observs_repair_status text not null default 'not_required',
   updated_at timestamptz default now()
 );
 
@@ -506,7 +506,7 @@ alter table if exists uk_aq_ops.prune_day_gates
 alter table if exists uk_aq_ops.prune_day_gates
   add column if not exists aggregate_done boolean default false;
 alter table if exists uk_aq_ops.prune_day_gates
-  add column if not exists history_repair_status text default 'not_required';
+  add column if not exists observs_repair_status text default 'not_required';
 alter table if exists uk_aq_ops.prune_day_gates
   add column if not exists updated_at timestamptz default now();
 
@@ -514,13 +514,13 @@ update uk_aq_ops.prune_day_gates
 set
   backup_done = coalesce(backup_done, false),
   aggregate_done = coalesce(aggregate_done, false),
-  history_repair_status = coalesce(nullif(btrim(history_repair_status), ''), 'not_required'),
+  observs_repair_status = coalesce(nullif(btrim(observs_repair_status), ''), 'not_required'),
   updated_at = coalesce(updated_at, now())
 where
   backup_done is null
   or aggregate_done is null
-  or history_repair_status is null
-  or btrim(history_repair_status) = ''
+  or observs_repair_status is null
+  or btrim(observs_repair_status) = ''
   or updated_at is null;
 
 alter table uk_aq_ops.prune_day_gates
@@ -532,9 +532,9 @@ alter table uk_aq_ops.prune_day_gates
 alter table uk_aq_ops.prune_day_gates
   alter column aggregate_done set default false;
 alter table uk_aq_ops.prune_day_gates
-  alter column history_repair_status set not null;
+  alter column observs_repair_status set not null;
 alter table uk_aq_ops.prune_day_gates
-  alter column history_repair_status set default 'not_required';
+  alter column observs_repair_status set default 'not_required';
 
 create index if not exists prune_day_gates_backup_done_idx
   on uk_aq_ops.prune_day_gates(backup_done, day_utc);
@@ -544,12 +544,12 @@ begin
   if not exists (
     select 1
     from pg_constraint
-    where conname = 'prune_day_gates_history_repair_status_check'
+    where conname = 'prune_day_gates_observs_repair_status_check'
       and conrelid = 'uk_aq_ops.prune_day_gates'::regclass
   ) then
     alter table uk_aq_ops.prune_day_gates
-      add constraint prune_day_gates_history_repair_status_check
-      check (history_repair_status in ('not_required', 'queued', 'in_progress', 'resolved', 'failed'));
+      add constraint prune_day_gates_observs_repair_status_check
+      check (observs_repair_status in ('not_required', 'queued', 'in_progress', 'resolved', 'failed'));
   end if;
 end
 $$;

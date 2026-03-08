@@ -281,6 +281,17 @@ select
   oldest_observed_at
 from uk_aq_ops.db_size_metrics_hourly;
 
+create or replace view uk_aq_r2_domain_size_metrics_hourly as
+select
+  bucket_hour,
+  domain_name,
+  size_bytes,
+  source,
+  recorded_at,
+  created_at,
+  updated_at
+from uk_aq_ops.r2_domain_size_metrics_hourly;
+
 alter view if exists connectors set (security_invoker = true);
 alter view if exists categories set (security_invoker = true);
 alter view if exists phenomena set (security_invoker = true);
@@ -304,6 +315,7 @@ alter view if exists bristol_latest_pollutants set (security_invoker = true);
 alter view if exists uk_aq_station_lat_lon set (security_invoker = true);
 alter view if exists uk_aq_observation_rpc_metrics_minute set (security_invoker = true);
 alter view if exists uk_aq_db_size_metrics_hourly set (security_invoker = true);
+alter view if exists uk_aq_r2_domain_size_metrics_hourly set (security_invoker = true);
 
 revoke all on uk_aq_observation_rpc_metrics_minute from public;
 grant select on uk_aq_observation_rpc_metrics_minute to authenticated;
@@ -312,6 +324,10 @@ grant select on uk_aq_observation_rpc_metrics_minute to service_role;
 revoke all on uk_aq_db_size_metrics_hourly from public;
 grant select on uk_aq_db_size_metrics_hourly to authenticated;
 grant select on uk_aq_db_size_metrics_hourly to service_role;
+
+revoke all on uk_aq_r2_domain_size_metrics_hourly from public;
+grant select on uk_aq_r2_domain_size_metrics_hourly to authenticated;
+grant select on uk_aq_r2_domain_size_metrics_hourly to service_role;
 
 grant usage on schema uk_aq_public to authenticated, service_role;
 grant select on all tables in schema uk_aq_public to authenticated, service_role;

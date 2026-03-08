@@ -920,7 +920,7 @@ grant execute on function uk_aq_public.uk_aq_surbiton_latest_rpc(
   int
 ) to service_role;
 
--- rpc_observations_window for explicit UTC history windows (website/cache use).
+-- rpc_observations_window for explicit UTC observs windows (website/cache use).
 
 drop function if exists uk_aq_public.rpc_observations_window(
   timestamptz,
@@ -942,10 +942,10 @@ create or replace function uk_aq_public.rpc_observations_window(
   timeseries_id integer default null,
   station_id integer default null
 )
-returns setof uk_aq_history.observations
+returns setof uk_aq_observs.observations
 language plpgsql
 security invoker
-set search_path = uk_aq_history, uk_aq_core, public, pg_catalog
+set search_path = uk_aq_observs, uk_aq_core, public, pg_catalog
 as $$
 begin
   if start_utc is null or end_utc is null then
@@ -963,7 +963,7 @@ begin
   if timeseries_id is not null and station_id is not null then
     return query
     select o.*
-    from uk_aq_history.observations o
+    from uk_aq_observs.observations o
     join uk_aq_core.timeseries ts
       on ts.id = o.timeseries_id
     where o.observed_at >= start_utc
@@ -977,7 +977,7 @@ begin
   if timeseries_id is not null then
     return query
     select o.*
-    from uk_aq_history.observations o
+    from uk_aq_observs.observations o
     where o.observed_at >= start_utc
       and o.observed_at < end_utc
       and o.timeseries_id = rpc_observations_window.timeseries_id
@@ -988,7 +988,7 @@ begin
   if station_id is not null then
     return query
     select o.*
-    from uk_aq_history.observations o
+    from uk_aq_observs.observations o
     join uk_aq_core.timeseries ts
       on ts.id = o.timeseries_id
     where o.observed_at >= start_utc
@@ -1000,7 +1000,7 @@ begin
 
   return query
   select o.*
-  from uk_aq_history.observations o
+  from uk_aq_observs.observations o
   where o.observed_at >= start_utc
     and o.observed_at < end_utc
   order by o.observed_at asc;
@@ -2228,7 +2228,7 @@ returns table (
 )
 language plpgsql
 security definer
-set search_path = uk_aq_aggdaily, uk_aq_core, uk_aq_public, public, pg_catalog
+set search_path = uk_aq_aqilevels, uk_aq_core, uk_aq_public, public, pg_catalog
 as $$
 declare
   v_start_exclusive timestamptz;
@@ -2451,7 +2451,7 @@ begin
     select
       c.*
     from computed c
-    left join uk_aq_aggdaily.station_aqi_hourly_helper e
+    left join uk_aq_aqilevels.station_aqi_hourly_helper e
       on e.station_id = c.station_id
      and e.timestamp_hour_utc = c.timestamp_hour_utc
     where
@@ -2481,7 +2481,7 @@ begin
       )
   ),
   upserted as (
-    insert into uk_aq_aggdaily.station_aqi_hourly_helper (
+    insert into uk_aq_aqilevels.station_aqi_hourly_helper (
       station_id,
       timestamp_hour_utc,
       no2_hourly_mean_ugm3,
@@ -2520,14 +2520,14 @@ begin
       updated_at = now()
     where
       (
-        uk_aq_aggdaily.station_aqi_hourly_helper.no2_hourly_mean_ugm3,
-        uk_aq_aggdaily.station_aqi_hourly_helper.pm25_hourly_mean_ugm3,
-        uk_aq_aggdaily.station_aqi_hourly_helper.pm10_hourly_mean_ugm3,
-        uk_aq_aggdaily.station_aqi_hourly_helper.pm25_rolling24h_mean_ugm3,
-        uk_aq_aggdaily.station_aqi_hourly_helper.pm10_rolling24h_mean_ugm3,
-        uk_aq_aggdaily.station_aqi_hourly_helper.no2_hourly_sample_count,
-        uk_aq_aggdaily.station_aqi_hourly_helper.pm25_hourly_sample_count,
-        uk_aq_aggdaily.station_aqi_hourly_helper.pm10_hourly_sample_count
+        uk_aq_aqilevels.station_aqi_hourly_helper.no2_hourly_mean_ugm3,
+        uk_aq_aqilevels.station_aqi_hourly_helper.pm25_hourly_mean_ugm3,
+        uk_aq_aqilevels.station_aqi_hourly_helper.pm10_hourly_mean_ugm3,
+        uk_aq_aqilevels.station_aqi_hourly_helper.pm25_rolling24h_mean_ugm3,
+        uk_aq_aqilevels.station_aqi_hourly_helper.pm10_rolling24h_mean_ugm3,
+        uk_aq_aqilevels.station_aqi_hourly_helper.no2_hourly_sample_count,
+        uk_aq_aqilevels.station_aqi_hourly_helper.pm25_hourly_sample_count,
+        uk_aq_aqilevels.station_aqi_hourly_helper.pm10_hourly_sample_count
       )
       is distinct from
       (
@@ -2597,7 +2597,7 @@ returns table (
 )
 language plpgsql
 security definer
-set search_path = uk_aq_aggdaily, public, pg_catalog
+set search_path = uk_aq_aqilevels, public, pg_catalog
 as $$
 declare
   v_start_exclusive timestamptz;
@@ -2629,7 +2629,7 @@ begin
     h.no2_hourly_sample_count,
     h.pm25_hourly_sample_count,
     h.pm10_hourly_sample_count
-  from uk_aq_aggdaily.station_aqi_hourly_helper h
+  from uk_aq_aqilevels.station_aqi_hourly_helper h
   where h.timestamp_hour_utc > (v_start_exclusive - interval '1 hour')
     and h.timestamp_hour_utc <= (v_end_inclusive - interval '1 hour')
     and (p_station_ids is null or h.station_id = any(p_station_ids))
@@ -2649,7 +2649,7 @@ returns table (
 )
 language plpgsql
 security definer
-set search_path = uk_aq_aggdaily, public, pg_catalog
+set search_path = uk_aq_aqilevels, public, pg_catalog
 as $$
 declare
   v_days integer;
@@ -2661,7 +2661,7 @@ begin
 
   v_days := greatest(1, least(coalesce(p_retention_days, 45), 3650));
 
-  delete from uk_aq_aggdaily.station_aqi_hourly_helper
+  delete from uk_aq_aqilevels.station_aqi_hourly_helper
   where timestamp_hour_utc < date_trunc('hour', now()) - make_interval(days => v_days);
 
   get diagnostics v_rows = row_count;
@@ -2730,6 +2730,10 @@ begin
         'uk_aq_rpc_database_size_bytes',
         'uk_aq_rpc_db_size_metric_upsert',
         'uk_aq_rpc_db_size_metric_cleanup',
+        'uk_aq_rpc_schema_size_metric_upsert',
+        'uk_aq_rpc_schema_size_metric_cleanup',
+        'uk_aq_rpc_r2_domain_size_metric_upsert',
+        'uk_aq_rpc_r2_domain_size_metric_cleanup',
         'uk_aq_rpc_r2_backup_window'
       ])
   loop
@@ -2792,7 +2796,7 @@ begin
     raise exception 'service_role required';
   end if;
 
-  if p_database_label not in ('ingestdb', 'historydb', 'aggdailydb') then
+  if p_database_label not in ('ingestdb', 'obs_aqidb') then
     raise exception 'invalid database_label: %', p_database_label;
   end if;
 
@@ -2866,6 +2870,90 @@ begin
 end;
 $$;
 
+create or replace function uk_aq_public.uk_aq_rpc_r2_domain_size_metric_upsert(
+  p_domain_name text,
+  p_size_bytes bigint,
+  p_recorded_at timestamptz default now(),
+  p_source text default null
+)
+returns table (rows_upserted int)
+language plpgsql
+security definer
+set search_path = uk_aq_ops, public, pg_catalog
+as $$
+declare
+  v_bucket_hour timestamptz;
+  v_rows int := 0;
+  v_source text;
+begin
+  if auth.role() <> 'service_role' then
+    raise exception 'service_role required';
+  end if;
+
+  if p_domain_name not in ('observations', 'aqilevels') then
+    raise exception 'invalid domain_name: %', p_domain_name;
+  end if;
+
+  if p_size_bytes is null or p_size_bytes < 0 then
+    raise exception 'size_bytes must be >= 0';
+  end if;
+
+  v_bucket_hour := date_trunc('hour', coalesce(p_recorded_at, now()));
+  v_source := coalesce(nullif(btrim(p_source), ''), 'uk_aq_db_size_logger_cloud_run');
+
+  insert into uk_aq_ops.r2_domain_size_metrics_hourly (
+    bucket_hour,
+    domain_name,
+    size_bytes,
+    source,
+    recorded_at,
+    updated_at
+  )
+  values (
+    v_bucket_hour,
+    p_domain_name,
+    p_size_bytes,
+    v_source,
+    coalesce(p_recorded_at, now()),
+    now()
+  )
+  on conflict (bucket_hour, domain_name) do update set
+    size_bytes = excluded.size_bytes,
+    source = excluded.source,
+    recorded_at = excluded.recorded_at,
+    updated_at = now();
+
+  get diagnostics v_rows = row_count;
+  return query select v_rows;
+end;
+$$;
+
+create or replace function uk_aq_public.uk_aq_rpc_r2_domain_size_metric_cleanup(
+  p_retention_days integer default 120
+)
+returns table (rows_deleted bigint)
+language plpgsql
+security definer
+set search_path = uk_aq_ops, public, pg_catalog
+as $$
+declare
+  v_days integer;
+  v_rows bigint := 0;
+begin
+  if auth.role() <> 'service_role' then
+    raise exception 'service_role required';
+  end if;
+
+  v_days := greatest(1, least(coalesce(p_retention_days, 120), 3650));
+
+  delete from uk_aq_ops.r2_domain_size_metrics_hourly
+  where bucket_hour < now() - make_interval(days => v_days);
+
+  get diagnostics v_rows = row_count;
+  return query select v_rows;
+end;
+$$;
+
 create or replace function uk_aq_public.uk_aq_rpc_r2_backup_window()
 returns table (
   min_day_utc date,
@@ -2918,6 +3006,22 @@ grant execute on function uk_aq_public.uk_aq_rpc_db_size_metric_upsert(
 
 revoke all on function uk_aq_public.uk_aq_rpc_db_size_metric_cleanup(integer) from public;
 grant execute on function uk_aq_public.uk_aq_rpc_db_size_metric_cleanup(integer) to service_role;
+
+revoke all on function uk_aq_public.uk_aq_rpc_r2_domain_size_metric_upsert(
+  text,
+  bigint,
+  timestamptz,
+  text
+) from public;
+grant execute on function uk_aq_public.uk_aq_rpc_r2_domain_size_metric_upsert(
+  text,
+  bigint,
+  timestamptz,
+  text
+) to service_role;
+
+revoke all on function uk_aq_public.uk_aq_rpc_r2_domain_size_metric_cleanup(integer) from public;
+grant execute on function uk_aq_public.uk_aq_rpc_r2_domain_size_metric_cleanup(integer) to service_role;
 
 revoke all on function uk_aq_public.uk_aq_rpc_r2_backup_window() from public;
 grant execute on function uk_aq_public.uk_aq_rpc_r2_backup_window() to service_role;

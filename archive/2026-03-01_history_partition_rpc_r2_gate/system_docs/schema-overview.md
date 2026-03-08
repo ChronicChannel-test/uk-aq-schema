@@ -43,7 +43,7 @@ This document summarizes the schema defined in `schemas/uk_air_quality_schema.sq
 - `observations`: raw time-value pairs for each timeseries (observed_at timestamptz, value, status flag). Partitioned by integer `connector_id` with primary key `(connector_id, timeseries_id, observed_at)` where both ids are integer.
 
 ## History schema (uk_aq_history)
-- Defined in `schemas/uk_aq_history_schema.sql`.
+- Defined in `schemas/observs_db/uk_aq_observs_schema.sql`.
 - `uk_aq_history.observations`: history-only fact table keyed by integer internal ids (`connector_id`, `timeseries_id`, `observed_at`) with `value`, `status_id`, and `created_at`.
 - RLS: service_role only (intended for Edge Functions / server-side access).
 - The history schema is additive only; no existing tables are moved out of `public` yet.
