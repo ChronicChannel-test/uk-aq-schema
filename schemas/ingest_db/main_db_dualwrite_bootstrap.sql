@@ -317,7 +317,7 @@ grant execute on function uk_aq_public.uk_aq_rpc_observs_outbox_claim(int) to se
 grant execute on function uk_aq_public.uk_aq_rpc_observs_outbox_resolve(jsonb) to service_role;
 grant execute on function uk_aq_public.uk_aq_rpc_observs_sync_receipt_daily_upsert(jsonb) to service_role;
 
--- Phase B backup ops objects (ingest prune safety gate + resumable export checkpoints).
+-- Phase B history ops objects (ingest prune safety gate + resumable export checkpoints).
 
 create schema if not exists uk_aq_ops;
 
@@ -332,7 +332,7 @@ begin
 end;
 $$;
 
-create table if not exists uk_aq_ops.backup_candidates (
+create table if not exists uk_aq_ops.history_candidates (
   day_utc date not null,
   connector_id integer not null,
   expected_row_count bigint not null,
@@ -342,10 +342,10 @@ create table if not exists uk_aq_ops.backup_candidates (
   run_id text,
   last_error text,
   manifest_key text,
-  backup_row_count bigint,
-  backup_file_count integer,
-  backup_total_bytes bigint,
-  backup_completed_at timestamptz,
+  history_row_count bigint,
+  history_file_count integer,
+  history_total_bytes bigint,
+  history_completed_at timestamptz,
   resume_last_timeseries_id integer,
   resume_last_observed_at timestamptz,
   resume_part_index integer not null default 0,
@@ -356,44 +356,44 @@ create table if not exists uk_aq_ops.backup_candidates (
   primary key (day_utc, connector_id)
 );
 
-alter table if exists uk_aq_ops.backup_candidates
+alter table if exists uk_aq_ops.history_candidates
   add column if not exists expected_row_count bigint;
-alter table if exists uk_aq_ops.backup_candidates
+alter table if exists uk_aq_ops.history_candidates
   add column if not exists min_observed_at timestamptz;
-alter table if exists uk_aq_ops.backup_candidates
+alter table if exists uk_aq_ops.history_candidates
   add column if not exists max_observed_at timestamptz;
-alter table if exists uk_aq_ops.backup_candidates
+alter table if exists uk_aq_ops.history_candidates
   add column if not exists status text;
-alter table if exists uk_aq_ops.backup_candidates
+alter table if exists uk_aq_ops.history_candidates
   add column if not exists run_id text;
-alter table if exists uk_aq_ops.backup_candidates
+alter table if exists uk_aq_ops.history_candidates
   add column if not exists last_error text;
-alter table if exists uk_aq_ops.backup_candidates
+alter table if exists uk_aq_ops.history_candidates
   add column if not exists manifest_key text;
-alter table if exists uk_aq_ops.backup_candidates
-  add column if not exists backup_row_count bigint;
-alter table if exists uk_aq_ops.backup_candidates
-  add column if not exists backup_file_count integer;
-alter table if exists uk_aq_ops.backup_candidates
-  add column if not exists backup_total_bytes bigint;
-alter table if exists uk_aq_ops.backup_candidates
-  add column if not exists backup_completed_at timestamptz;
-alter table if exists uk_aq_ops.backup_candidates
+alter table if exists uk_aq_ops.history_candidates
+  add column if not exists history_row_count bigint;
+alter table if exists uk_aq_ops.history_candidates
+  add column if not exists history_file_count integer;
+alter table if exists uk_aq_ops.history_candidates
+  add column if not exists history_total_bytes bigint;
+alter table if exists uk_aq_ops.history_candidates
+  add column if not exists history_completed_at timestamptz;
+alter table if exists uk_aq_ops.history_candidates
   add column if not exists resume_last_timeseries_id integer;
-alter table if exists uk_aq_ops.backup_candidates
+alter table if exists uk_aq_ops.history_candidates
   add column if not exists resume_last_observed_at timestamptz;
-alter table if exists uk_aq_ops.backup_candidates
+alter table if exists uk_aq_ops.history_candidates
   add column if not exists resume_part_index integer default 0;
-alter table if exists uk_aq_ops.backup_candidates
+alter table if exists uk_aq_ops.history_candidates
   add column if not exists resume_exported_row_count bigint default 0;
-alter table if exists uk_aq_ops.backup_candidates
+alter table if exists uk_aq_ops.history_candidates
   add column if not exists resume_parts_json jsonb default '[]'::jsonb;
-alter table if exists uk_aq_ops.backup_candidates
+alter table if exists uk_aq_ops.history_candidates
   add column if not exists created_at timestamptz default now();
-alter table if exists uk_aq_ops.backup_candidates
+alter table if exists uk_aq_ops.history_candidates
   add column if not exists updated_at timestamptz default now();
 
-update uk_aq_ops.backup_candidates
+update uk_aq_ops.history_candidates
 set
   status = coalesce(nullif(btrim(status), ''), 'pending'),
   expected_row_count = coalesce(expected_row_count, 0),
@@ -412,41 +412,41 @@ where
   or updated_at is null
   or created_at is null;
 
-alter table uk_aq_ops.backup_candidates
+alter table uk_aq_ops.history_candidates
   alter column expected_row_count set not null;
-alter table uk_aq_ops.backup_candidates
+alter table uk_aq_ops.history_candidates
   alter column status set not null;
-alter table uk_aq_ops.backup_candidates
+alter table uk_aq_ops.history_candidates
   alter column status set default 'pending';
-alter table uk_aq_ops.backup_candidates
+alter table uk_aq_ops.history_candidates
   alter column resume_part_index set not null;
-alter table uk_aq_ops.backup_candidates
+alter table uk_aq_ops.history_candidates
   alter column resume_part_index set default 0;
-alter table uk_aq_ops.backup_candidates
+alter table uk_aq_ops.history_candidates
   alter column resume_exported_row_count set not null;
-alter table uk_aq_ops.backup_candidates
+alter table uk_aq_ops.history_candidates
   alter column resume_exported_row_count set default 0;
-alter table uk_aq_ops.backup_candidates
+alter table uk_aq_ops.history_candidates
   alter column resume_parts_json set not null;
-alter table uk_aq_ops.backup_candidates
+alter table uk_aq_ops.history_candidates
   alter column resume_parts_json set default '[]'::jsonb;
 
-create index if not exists backup_candidates_status_day_idx
-  on uk_aq_ops.backup_candidates(status, day_utc);
+create index if not exists history_candidates_status_day_idx
+  on uk_aq_ops.history_candidates(status, day_utc);
 
-create index if not exists backup_candidates_day_status_idx
-  on uk_aq_ops.backup_candidates(day_utc, status, connector_id);
+create index if not exists history_candidates_day_status_idx
+  on uk_aq_ops.history_candidates(day_utc, status, connector_id);
 
 do $$
 begin
   if not exists (
     select 1
     from pg_constraint
-    where conname = 'backup_candidates_status_check'
-      and conrelid = 'uk_aq_ops.backup_candidates'::regclass
+    where conname = 'history_candidates_status_check'
+      and conrelid = 'uk_aq_ops.history_candidates'::regclass
   ) then
-    alter table uk_aq_ops.backup_candidates
-      add constraint backup_candidates_status_check
+    alter table uk_aq_ops.history_candidates
+      add constraint history_candidates_status_check
       check (status in ('pending', 'in_progress', 'complete', 'failed'));
   end if;
 end
@@ -457,11 +457,11 @@ begin
   if not exists (
     select 1
     from pg_constraint
-    where conname = 'backup_candidates_resume_nonnegative_check'
-      and conrelid = 'uk_aq_ops.backup_candidates'::regclass
+    where conname = 'history_candidates_resume_nonnegative_check'
+      and conrelid = 'uk_aq_ops.history_candidates'::regclass
   ) then
-    alter table uk_aq_ops.backup_candidates
-      add constraint backup_candidates_resume_nonnegative_check
+    alter table uk_aq_ops.history_candidates
+      add constraint history_candidates_resume_nonnegative_check
       check (
         resume_part_index >= 0
         and resume_exported_row_count >= 0
@@ -470,39 +470,39 @@ begin
 end
 $$;
 
-drop trigger if exists backup_candidates_touch_updated_at on uk_aq_ops.backup_candidates;
-create trigger backup_candidates_touch_updated_at
-before update on uk_aq_ops.backup_candidates
+drop trigger if exists history_candidates_touch_updated_at on uk_aq_ops.history_candidates;
+create trigger history_candidates_touch_updated_at
+before update on uk_aq_ops.history_candidates
 for each row execute function uk_aq_ops.uk_aq_touch_updated_at();
 
 create table if not exists uk_aq_ops.prune_day_gates (
   day_utc date primary key,
-  backup_done boolean not null default false,
-  backup_run_id text,
-  backup_manifest_key text,
-  backup_row_count bigint,
-  backup_file_count integer,
-  backup_total_bytes bigint,
-  backup_completed_at timestamptz,
+  history_done boolean not null default false,
+  history_run_id text,
+  history_manifest_key text,
+  history_row_count bigint,
+  history_file_count integer,
+  history_total_bytes bigint,
+  history_completed_at timestamptz,
   aggregate_done boolean not null default false,
   observs_repair_status text not null default 'not_required',
   updated_at timestamptz default now()
 );
 
 alter table if exists uk_aq_ops.prune_day_gates
-  add column if not exists backup_done boolean default false;
+  add column if not exists history_done boolean default false;
 alter table if exists uk_aq_ops.prune_day_gates
-  add column if not exists backup_run_id text;
+  add column if not exists history_run_id text;
 alter table if exists uk_aq_ops.prune_day_gates
-  add column if not exists backup_manifest_key text;
+  add column if not exists history_manifest_key text;
 alter table if exists uk_aq_ops.prune_day_gates
-  add column if not exists backup_row_count bigint;
+  add column if not exists history_row_count bigint;
 alter table if exists uk_aq_ops.prune_day_gates
-  add column if not exists backup_file_count integer;
+  add column if not exists history_file_count integer;
 alter table if exists uk_aq_ops.prune_day_gates
-  add column if not exists backup_total_bytes bigint;
+  add column if not exists history_total_bytes bigint;
 alter table if exists uk_aq_ops.prune_day_gates
-  add column if not exists backup_completed_at timestamptz;
+  add column if not exists history_completed_at timestamptz;
 alter table if exists uk_aq_ops.prune_day_gates
   add column if not exists aggregate_done boolean default false;
 alter table if exists uk_aq_ops.prune_day_gates
@@ -512,21 +512,21 @@ alter table if exists uk_aq_ops.prune_day_gates
 
 update uk_aq_ops.prune_day_gates
 set
-  backup_done = coalesce(backup_done, false),
+  history_done = coalesce(history_done, false),
   aggregate_done = coalesce(aggregate_done, false),
   observs_repair_status = coalesce(nullif(btrim(observs_repair_status), ''), 'not_required'),
   updated_at = coalesce(updated_at, now())
 where
-  backup_done is null
+  history_done is null
   or aggregate_done is null
   or observs_repair_status is null
   or btrim(observs_repair_status) = ''
   or updated_at is null;
 
 alter table uk_aq_ops.prune_day_gates
-  alter column backup_done set not null;
+  alter column history_done set not null;
 alter table uk_aq_ops.prune_day_gates
-  alter column backup_done set default false;
+  alter column history_done set default false;
 alter table uk_aq_ops.prune_day_gates
   alter column aggregate_done set not null;
 alter table uk_aq_ops.prune_day_gates
@@ -536,8 +536,8 @@ alter table uk_aq_ops.prune_day_gates
 alter table uk_aq_ops.prune_day_gates
   alter column observs_repair_status set default 'not_required';
 
-create index if not exists prune_day_gates_backup_done_idx
-  on uk_aq_ops.prune_day_gates(backup_done, day_utc);
+create index if not exists prune_day_gates_history_done_idx
+  on uk_aq_ops.prune_day_gates(history_done, day_utc);
 
 do $$
 begin
@@ -559,7 +559,7 @@ create trigger prune_day_gates_touch_updated_at
 before update on uk_aq_ops.prune_day_gates
 for each row execute function uk_aq_ops.uk_aq_touch_updated_at();
 
-create or replace function uk_aq_ops.uk_aq_phase_b_backup_rows(
+create or replace function uk_aq_ops.uk_aq_phase_b_history_rows(
   p_connector_id integer,
   p_day_start timestamptz,
   p_day_end timestamptz,

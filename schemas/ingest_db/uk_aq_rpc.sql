@@ -2734,7 +2734,7 @@ begin
         'uk_aq_rpc_schema_size_metric_cleanup',
         'uk_aq_rpc_r2_domain_size_metric_upsert',
         'uk_aq_rpc_r2_domain_size_metric_cleanup',
-        'uk_aq_rpc_r2_backup_window'
+        'uk_aq_rpc_r2_history_window'
       ])
   loop
     execute format(
@@ -2954,7 +2954,7 @@ begin
 end;
 $$;
 
-create or replace function uk_aq_public.uk_aq_rpc_r2_backup_window()
+create or replace function uk_aq_public.uk_aq_rpc_r2_history_window()
 returns table (
   min_day_utc date,
   max_day_utc date
@@ -2978,9 +2978,9 @@ begin
     min(day_utc)::date as min_day_utc,
     max(day_utc)::date as max_day_utc
   from uk_aq_ops.prune_day_gates
-  where backup_done is true
-    and nullif(btrim(backup_manifest_key), '') is not null
-    and backup_completed_at is not null;
+  where history_done is true
+    and nullif(btrim(history_manifest_key), '') is not null
+    and history_completed_at is not null;
 end;
 $$;
 
@@ -3023,5 +3023,5 @@ grant execute on function uk_aq_public.uk_aq_rpc_r2_domain_size_metric_upsert(
 revoke all on function uk_aq_public.uk_aq_rpc_r2_domain_size_metric_cleanup(integer) from public;
 grant execute on function uk_aq_public.uk_aq_rpc_r2_domain_size_metric_cleanup(integer) to service_role;
 
-revoke all on function uk_aq_public.uk_aq_rpc_r2_backup_window() from public;
-grant execute on function uk_aq_public.uk_aq_rpc_r2_backup_window() to service_role;
+revoke all on function uk_aq_public.uk_aq_rpc_r2_history_window() from public;
+grant execute on function uk_aq_public.uk_aq_rpc_r2_history_window() to service_role;

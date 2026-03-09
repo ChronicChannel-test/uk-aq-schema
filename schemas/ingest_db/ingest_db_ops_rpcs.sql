@@ -76,6 +76,84 @@ revoke execute on function uk_aq_public.uk_aq_rpc_observations_hourly_fingerprin
 revoke execute on function uk_aq_public.uk_aq_rpc_observations_hourly_fingerprint(timestamptz, timestamptz) from anon, authenticated;
 grant execute on function uk_aq_public.uk_aq_rpc_observations_hourly_fingerprint(timestamptz, timestamptz) to service_role;
 
+drop function if exists uk_aq_public.uk_aq_rpc_observations_select_hour_bucket(bigint, timestamptz, int, int);
+drop function if exists uk_aq_public.uk_aq_rpc_observations_select_hour_bucket(integer, timestamptz, int, int);
+drop function if exists uk_aq_public.uk_aq_rpc_observations_select_hour_bucket(bigint, timestamptz);
+drop function if exists uk_aq_public.uk_aq_rpc_observations_select_hour_bucket(integer, timestamptz);
+create or replace function uk_aq_public.uk_aq_rpc_observations_select_hour_bucket(
+  p_connector_id integer,
+  p_hour_start timestamptz,
+  p_page_size int default 1000,
+  p_page_offset int default 0
+)
+returns table (
+  connector_id bigint,
+  timeseries_id bigint,
+  observed_at timestamptz,
+  value text,
+  value_float8_hex text,
+  status text
+)
+language plpgsql
+security definer
+set search_path = uk_aq_core, public, pg_catalog
+as $$
+declare
+  v_hour_start timestamptz;
+  v_hour_end timestamptz;
+  v_page_size int;
+  v_page_offset int;
+begin
+  set local timezone = 'UTC';
+
+  if auth.role() <> 'service_role' then
+    raise exception 'service_role required';
+  end if;
+
+  if p_connector_id is null then
+    raise exception 'p_connector_id is required';
+  end if;
+
+  if p_hour_start is null then
+    raise exception 'p_hour_start is required';
+  end if;
+
+  v_page_size := greatest(1, least(coalesce(p_page_size, 1000), 10000));
+  v_page_offset := greatest(0, coalesce(p_page_offset, 0));
+  v_hour_start := date_trunc('hour', p_hour_start);
+  v_hour_end := v_hour_start + interval '1 hour';
+
+  return query
+  select
+    o.connector_id::bigint as connector_id,
+    o.timeseries_id::bigint as timeseries_id,
+    o.observed_at,
+    case
+      when o.value is null then null
+      else trim(trailing '.' from trim(trailing '0' from to_char(
+        o.value,
+        'FM9999999999999990.99999999999999999'
+      )))
+    end as value,
+    case
+      when o.value is null then null
+      else encode(float8send(o.value), 'hex')
+    end as value_float8_hex,
+    o.status
+  from uk_aq_core.observations o
+  where o.connector_id = p_connector_id
+    and o.observed_at >= v_hour_start
+    and o.observed_at < v_hour_end
+  order by o.timeseries_id, o.observed_at
+  offset v_page_offset
+  limit v_page_size;
+end;
+$$;
+
+revoke execute on function uk_aq_public.uk_aq_rpc_observations_select_hour_bucket(integer, timestamptz, int, int) from public;
+revoke execute on function uk_aq_public.uk_aq_rpc_observations_select_hour_bucket(integer, timestamptz, int, int) from anon, authenticated;
+grant execute on function uk_aq_public.uk_aq_rpc_observations_select_hour_bucket(integer, timestamptz, int, int) to service_role;
+
 drop function if exists uk_aq_public.uk_aq_rpc_observations_delete_hour_bucket(bigint, timestamptz, int);
 drop function if exists uk_aq_public.uk_aq_rpc_observations_delete_hour_bucket(integer, timestamptz, int);
 create or replace function uk_aq_public.uk_aq_rpc_observations_delete_hour_bucket(

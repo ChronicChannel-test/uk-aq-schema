@@ -31,6 +31,11 @@ These SQL files are the targeted cutover migrations for Phase 2/3 hard-cut renam
     - `uk_aq_observs.observations.observed_at`
     - `uk_aq_aqilevels.station_aqi_hourly.timestamp_hour_utc`
   - updates both local pg_cron sampler and public DB-size RPC
+- `2026-03-09_observs_vacuum_full_cron_0500.sql`
+  - apply to `obs_aqidb`
+  - removes legacy observs/history/aqilevels vacuum-full job names
+  - ensures one shared 05:00 full-database vacuum job:
+    - `uk_aq_obs_aqidb_vacuum_full_0500_utc`
 
 ## Recommended Apply Order
 1. `obs_aqidb`: `2026-03-08_obs_aqidb_db_size_label_cutover.sql`
@@ -41,6 +46,7 @@ These SQL files are the targeted cutover migrations for Phase 2/3 hard-cut renam
 6. `ingestdb`: `2026-03-08_ingest_size_metrics_schema_r2.sql`
 7. `ingestdb`: `2026-03-08_phase3_obs_aqidb_schema_hard_cut.sql`
 8. `ingestdb`: `2026-03-08_ingest_drop_schema_size_metrics_store.sql`
+9. `obs_aqidb`: `2026-03-09_observs_vacuum_full_cron_0500.sql`
 
 Runbook with full verification queries lives in ingest repo:
 `plans/obs_aqidb_refactor_phase3_runbook.md`

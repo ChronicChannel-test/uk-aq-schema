@@ -441,15 +441,21 @@ alter view if exists uk_aq_public.uk_aq_db_size_metrics_hourly set (security_inv
 
 create extension if not exists pg_cron with schema extensions;
 
--- Schedule daily observs observations VACUUM FULL at 05:30 UTC.
+-- Schedule shared obs AQI DB full-database VACUUM FULL at 05:00 UTC.
 select cron.unschedule(jobid)
 from cron.job
-where jobname = 'uk_aq_observs_observations_vacuum_full_0530_utc';
+where jobname in (
+  'uk_aq_history_observations_vacuum_full_0530_utc',
+  'uk_aq_observs_observations_vacuum_full_0530_utc',
+  'uk_aq_observs_vacuum_full_0500_utc',
+  'uk_aq_aqilevels_vacuum_full_0500_utc',
+  'uk_aq_obs_aqidb_vacuum_full_0500_utc'
+);
 
 select cron.schedule(
-  'uk_aq_observs_observations_vacuum_full_0530_utc',
-  '30 5 * * *',
-  $$vacuum (full, analyze, verbose) uk_aq_observs.observations;$$
+  'uk_aq_obs_aqidb_vacuum_full_0500_utc',
+  '0 5 * * *',
+  $$vacuum (full, analyze, verbose);$$
 );
 
 create or replace function uk_aq_ops.uk_aq_db_size_metric_sample_local(
