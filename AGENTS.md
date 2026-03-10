@@ -8,9 +8,9 @@
 - Canonical table/function/view DDL must be authored in this repo under `schemas/`.
 - Do not keep schema changes only in ingest/ops worker-local SQL files.
 - For AQI levels schema changes, always update the main schema file:
-  - `schemas/aqilevels_db/uk_aq_aqilevels_schema.sql`
+  - `schemas/obs_aqi_db/uk_aq_obs_aqi_db_schema.sql`
 - If a targeted apply file is used, keep it in this repo under:
-  - `schemas/aqilevels_db/`
+  - `schemas/obs_aqi_db/`
   and keep it aligned with the main AQI levels schema.
 
 ## R2/Cloudflare Cache Cost Policy

@@ -1978,6 +1978,8 @@ as $$
     and t.station_id = any($3);
 $$;
 
+drop function if exists uk_aq_public.uk_aq_rpc_history_observations_upsert(jsonb);
+
 create or replace function uk_aq_public.uk_aq_rpc_observations_upsert(rows jsonb)
 returns table (observations_upserted int)
 language plpgsql

@@ -40,11 +40,15 @@ These SQL files are the targeted cutover migrations for Phase 2/3 hard-cut renam
   - apply to `obs_aqidb`
   - replaces cluster-sum DB size reads with `pg_database_size(current_database())`
   - prevents statement-timeout failures in DB-size RPC sampling paths
+- `2026-03-10_ingest_phase8_legacy_aggdaily_cleanup.sql`
+  - apply to `ingestdb`
+  - removes legacy `uk_aq_rpc_history_observations_upsert` RPC
+  - re-creates `uk_aq_aqilevels.uk_aq_aqi_index_lookup` with hard-cut `uk_aq_aqilevels` references only
 
 ## Recommended Apply Order
 1. `obs_aqidb`: `2026-03-08_obs_aqidb_db_size_label_cutover.sql`
 2. `obs_aqidb`: `2026-03-08_phase3_obs_aqidb_schema_hard_cut.sql`
-3. `obs_aqidb`: `../aqilevels_db/uk_aq_aqilevels_schema.sql` (ensure AQI schema exists in obs_aqidb)
+3. `obs_aqidb`: `../obs_aqi_db/uk_aq_obs_aqi_db_schema.sql` (ensure AQI schema exists in obs_aqidb)
 4. `obs_aqidb`: `2026-03-08_obs_aqidb_db_size_oldest_combined_fix.sql`
 5. `obs_aqidb`: `2026-03-08_obs_aqidb_schema_size_metrics_store.sql`
 6. `ingestdb`: `2026-03-08_ingest_size_metrics_schema_r2.sql`
@@ -52,6 +56,7 @@ These SQL files are the targeted cutover migrations for Phase 2/3 hard-cut renam
 8. `ingestdb`: `2026-03-08_ingest_drop_schema_size_metrics_store.sql`
 9. `obs_aqidb`: `2026-03-09_observs_vacuum_full_cron_0500.sql`
 10. `obs_aqidb`: `2026-03-10_obs_aqidb_db_size_current_database_fast_path.sql`
+11. `ingestdb`: `2026-03-10_ingest_phase8_legacy_aggdaily_cleanup.sql`
 
 Runbook with full verification queries lives in ingest repo:
 `plans/obs_aqidb_refactor_phase3_runbook.md`

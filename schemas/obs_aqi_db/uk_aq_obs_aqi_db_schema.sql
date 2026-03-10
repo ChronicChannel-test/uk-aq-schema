@@ -1,5 +1,5 @@
--- uk_aq_core subset for Obs AQI DB.
--- Source of truth copied from ingest schema DDL so mirrored tables match exactly.
+-- Combined Obs AQI DB schema.
+-- Includes mirrored core metadata, observs tables, AQI levels tables, and ops helper objects.
 
 create extension if not exists postgis;
 create extension if not exists pgcrypto;
@@ -7,6 +7,7 @@ create extension if not exists pgcrypto;
 create schema if not exists uk_aq_core;
 create schema if not exists uk_aq_public;
 create schema if not exists uk_aq_aqilevels;
+create schema if not exists uk_aq_observs;
 create schema if not exists uk_aq_ops;
 
 set search_path = uk_aq_core, public;
@@ -334,7 +335,84 @@ alter default privileges in schema uk_aq_core
 grant usage on schema public to service_role;
 grant usage on schema uk_aq_public to service_role;
 grant usage on schema uk_aq_aqilevels to service_role;
+grant usage on schema uk_aq_observs to service_role;
 grant usage on schema uk_aq_ops to service_role;
+
+create table if not exists uk_aq_observs.observations (
+  connector_id integer not null,
+  timeseries_id integer not null,
+  observed_at timestamptz not null,
+  value double precision
+) partition by range (observed_at);
+
+create table if not exists uk_aq_observs.observations_default
+  partition of uk_aq_observs.observations default;
+
+comment on table uk_aq_observs.observations_default is
+  'Catch-all/default partition for out-of-range rows. Non-zero rows are treated as a maintenance alert signal.';
+
+create index if not exists uk_aq_observs_observations_default_observed_at_brin
+  on uk_aq_observs.observations_default using brin (observed_at);
+
+do $$
+declare
+  v_today_utc date := (now() at time zone 'UTC')::date;
+  v_day date;
+  v_partition_name text;
+begin
+  for v_day in
+    select generate_series(v_today_utc - 2, v_today_utc + 3, interval '1 day')::date
+  loop
+    v_partition_name := format('observations_%s', to_char(v_day, 'YYYYMMDD'));
+
+    execute format(
+      'create table if not exists uk_aq_observs.%I '
+      'partition of uk_aq_observs.observations '
+      'for values from (%L) to (%L)',
+      v_partition_name,
+      format('%s 00:00:00+00', v_day),
+      format('%s 00:00:00+00', v_day + 1)
+    );
+
+    execute format(
+      'create index if not exists %I on uk_aq_observs.%I using brin (observed_at)',
+      v_partition_name || '_observed_at_brin_idx',
+      v_partition_name
+    );
+
+    if v_day between (v_today_utc - 2) and (v_today_utc + 3) then
+      execute format(
+        'create unique index if not exists %I on uk_aq_observs.%I (connector_id, timeseries_id, observed_at)',
+        v_partition_name || '_hot_key_uidx',
+        v_partition_name
+      );
+    else
+      execute format(
+        'drop index if exists uk_aq_observs.%I',
+        v_partition_name || '_hot_key_uidx'
+      );
+    end if;
+  end loop;
+end $$;
+
+-- RLS: observs access is service_role only (Edge Functions / server).
+alter table if exists uk_aq_observs.observations enable row level security;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_policies p
+    where p.schemaname = 'uk_aq_observs'
+      and p.tablename = 'observations'
+      and p.policyname = 'uk_aq_observs_observations_service_role'
+  ) then
+    execute
+      'create policy uk_aq_observs_observations_service_role on uk_aq_observs.observations '
+      'for all using (auth.role() = ''service_role'') '
+      'with check (auth.role() = ''service_role'');';
+  end if;
+end $$;
 
 create table if not exists uk_aq_ops.db_size_metrics_hourly (
   bucket_hour timestamptz not null,
@@ -607,9 +685,10 @@ begin
     v_bucket_hour,
     'obs_aqidb',
     current_database()::text,
-    (
-      pg_database_size(current_database())::bigint
-    ),
+	(
+	    select coalesce(sum(pg_database_size(pg_database.datname)), 0)::bigint
+	    from pg_database
+	    ),
     v_oldest_observed_at,
     v_source,
     coalesce(p_recorded_at, now()),
@@ -636,10 +715,12 @@ $$;
 
 select cron.unschedule(jobid)
 from cron.job
-where jobname = 'uk_aq_aqilevels_db_size_metrics_hourly';
+where jobname in (
+  'uk_aq_obs_aqidb_db_size_metrics_hourly'
+);
 
 select cron.schedule(
-  'uk_aq_aqilevels_db_size_metrics_hourly',
+  'uk_aq_obs_aqidb_db_size_metrics_hourly',
   '2 * * * *',
   $$select * from uk_aq_ops.uk_aq_db_size_metric_sample_local();$$
 );
@@ -648,10 +729,6 @@ select cron.schedule(
 select cron.unschedule(jobid)
 from cron.job
 where jobname in (
-  'uk_aq_history_observations_vacuum_full_0530_utc',
-  'uk_aq_observs_observations_vacuum_full_0530_utc',
-  'uk_aq_observs_vacuum_full_0500_utc',
-  'uk_aq_aqilevels_vacuum_full_0500_utc',
   'uk_aq_obs_aqidb_vacuum_full_0500_utc'
 );
 
@@ -1849,6 +1926,7 @@ grant all on table uk_aq_aqilevels.aqi_breakpoints to service_role;
 grant all on table uk_aq_aqilevels.station_aqi_hourly to service_role;
 grant all on table uk_aq_aqilevels.station_aqi_daily to service_role;
 grant all on table uk_aq_aqilevels.station_aqi_monthly to service_role;
+grant all on table uk_aq_observs.observations to service_role;
 grant all on table uk_aq_ops.aqi_compute_runs to service_role;
 
 revoke all on uk_aq_public.uk_aq_station_aqi_hourly from public;

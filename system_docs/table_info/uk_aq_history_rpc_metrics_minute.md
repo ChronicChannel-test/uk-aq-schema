@@ -15,7 +15,7 @@ Per-minute telemetry for history DB RPC write pressure.
 ## Notes
 - Primary key is `(bucket_minute, endpoint)`.
 - Populated by `uk_aq_public.uk_aq_rpc_history_observations_upsert` in
-  `schemas/observs_db/observs_db_dualwrite_bootstrap.sql`.
+  `schemas/obs_aqi_db/uk_aq_obs_aqi_db_dualwrite_bootstrap.sql`.
 - Metrics are emitted regardless of whether the RPC uses the hot-partition
   direct upsert path or the fallback update-then-insert path.
 - Exposed via `uk_aq_public.uk_aq_history_rpc_metrics_minute` for service-role reads.

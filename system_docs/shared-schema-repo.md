@@ -10,7 +10,7 @@ uk-aq-schema/
   schemas/
     uk_air_quality_schema.sql
     uk_air_quality_views.sql
-    uk_aq_observs_schema.sql
+    uk_aq_obs_aqi_db_schema.sql
     purpleair_schema.sql
     drop_uk_air_quality_tables.sql
   seeds/
@@ -57,7 +57,7 @@ set -euo pipefail
 
 SCHEMA_DIR="${PWD}/vendor/uk-aq-schema"
 psql "$HISTORY_DB_URL" <<'SQL'
-\i '"$SCHEMA_DIR/schemas/observs_db/uk_aq_observs_schema.sql"'
+\i '"$SCHEMA_DIR/schemas/obs_aqi_db/uk_aq_obs_aqi_db_schema.sql"'
 SQL
 ```
 
