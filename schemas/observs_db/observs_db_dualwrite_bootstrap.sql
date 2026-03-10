@@ -350,8 +350,7 @@ begin
   select
     current_database()::text as database_name,
     (
-      select coalesce(sum(pg_database_size(pg_database.datname)), 0)::bigint
-      from pg_database
+      pg_database_size(current_database())::bigint
     ) as size_bytes,
     now() as sampled_at;
 end;

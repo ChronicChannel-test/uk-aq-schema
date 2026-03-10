@@ -2980,6 +2980,7 @@ begin
   from uk_aq_ops.prune_day_gates
   where history_done is true
     and nullif(btrim(history_manifest_key), '') is not null
+    and history_manifest_key ~ '^history/v1/(observations|aqilevels)/day_utc=[0-9]{4}-[0-9]{2}-[0-9]{2}/manifest\.json$'
     and history_completed_at is not null;
 end;
 $$;

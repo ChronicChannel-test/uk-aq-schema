@@ -169,8 +169,7 @@ begin
     'obs_aqidb',
     current_database()::text,
     (
-      select coalesce(sum(pg_database_size(pg_database.datname)), 0)::bigint
-      from pg_database
+      pg_database_size(current_database())::bigint
     ),
     v_oldest_observed_at,
     v_source,

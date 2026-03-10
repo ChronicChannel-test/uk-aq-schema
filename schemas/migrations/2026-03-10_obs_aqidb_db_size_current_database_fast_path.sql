@@ -1,6 +1,6 @@
 -- Apply target: obs_aqidb
--- Purpose: ensure oldest_observed_at reflects the minimum timestamp across
--- both uk_aq_observs.observations and uk_aq_aqilevels.station_aqi_hourly.
+-- Purpose: avoid statement timeout in db-size sampling by using current_database()
+-- instead of summing pg_database_size across every database in the cluster.
 
 begin;
 
@@ -41,9 +41,7 @@ begin
   return query
   select
     current_database()::text as database_name,
-    (
-      pg_database_size(current_database())::bigint
-    ) as size_bytes,
+    pg_database_size(current_database())::bigint as size_bytes,
     v_oldest_observed_at as oldest_observed_at,
     now() as sampled_at;
 end;
@@ -104,9 +102,7 @@ begin
     v_bucket_hour,
     'obs_aqidb',
     current_database()::text,
-    (
-      pg_database_size(current_database())::bigint
-    ),
+    pg_database_size(current_database())::bigint,
     v_oldest_observed_at,
     v_source,
     coalesce(p_recorded_at, now()),
