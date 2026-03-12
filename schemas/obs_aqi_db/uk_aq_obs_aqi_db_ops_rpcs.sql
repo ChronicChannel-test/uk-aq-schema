@@ -791,6 +791,9 @@ declare
   v_brin_exists boolean;
 begin
   set local timezone = 'UTC';
+  -- Guard against short inherited role/session timeouts during partition/index DDL.
+  set local statement_timeout = '15min';
+  set local lock_timeout = '5s';
 
   if auth.role() <> 'service_role' then
     raise exception 'service_role required';
@@ -893,6 +896,9 @@ declare
   v_con record;
 begin
   set local timezone = 'UTC';
+  -- Guard against short inherited role/session timeouts during partition/index DDL.
+  set local statement_timeout = '15min';
+  set local lock_timeout = '5s';
 
   if auth.role() <> 'service_role' then
     raise exception 'service_role required';
@@ -1168,6 +1174,45 @@ begin
 end;
 $$;
 
+drop function if exists uk_aq_public.uk_aq_rpc_observs_day_has_rows(date);
+create or replace function uk_aq_public.uk_aq_rpc_observs_day_has_rows(
+  p_day_utc date
+)
+returns table (
+  has_rows boolean
+)
+language plpgsql
+security definer
+set search_path = uk_aq_observs, public, pg_catalog
+as $$
+declare
+  v_start timestamptz;
+  v_end timestamptz;
+begin
+  set local timezone = 'UTC';
+
+  if auth.role() <> 'service_role' then
+    raise exception 'service_role required';
+  end if;
+
+  if p_day_utc is null then
+    raise exception 'p_day_utc is required';
+  end if;
+
+  v_start := (p_day_utc::text || ' 00:00:00+00')::timestamptz;
+  v_end := ((p_day_utc + 1)::text || ' 00:00:00+00')::timestamptz;
+
+  return query
+  select exists (
+    select 1
+    from uk_aq_observs.observations o
+    where o.observed_at >= v_start
+      and o.observed_at < v_end
+    limit 1
+  );
+end;
+$$;
+
 drop function if exists uk_aq_public.uk_aq_rpc_info_schema_columns(text, text[]);
 create or replace function uk_aq_public.uk_aq_rpc_info_schema_columns(
   p_schema text default 'uk_aq_core',
@@ -1380,6 +1425,10 @@ grant execute on function uk_aq_public.uk_aq_rpc_observs_drop_candidates(timesta
 revoke execute on function uk_aq_public.uk_aq_rpc_observs_drop_partition(text) from public;
 revoke execute on function uk_aq_public.uk_aq_rpc_observs_drop_partition(text) from anon, authenticated;
 grant execute on function uk_aq_public.uk_aq_rpc_observs_drop_partition(text) to service_role;
+
+revoke execute on function uk_aq_public.uk_aq_rpc_observs_day_has_rows(date) from public;
+revoke execute on function uk_aq_public.uk_aq_rpc_observs_day_has_rows(date) from anon, authenticated;
+grant execute on function uk_aq_public.uk_aq_rpc_observs_day_has_rows(date) to service_role;
 
 revoke execute on function uk_aq_public.uk_aq_rpc_info_schema_columns(text, text[]) from public;
 revoke execute on function uk_aq_public.uk_aq_rpc_info_schema_columns(text, text[]) from anon, authenticated;
