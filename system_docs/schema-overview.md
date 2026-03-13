@@ -56,17 +56,21 @@ This document summarizes the schema defined in `schemas/uk_air_quality_schema.sq
 ## Ops size telemetry (dashboard support)
 - `uk_aq_ops.db_size_metrics_hourly`: hourly DB cluster size points keyed by `database_label` (target hard-cut labels: `ingestdb`, `obs_aqidb`).
 - `uk_aq_ops.schema_size_metrics_hourly`: hourly schema size points for `uk_aq_observs` and `uk_aq_aqilevels` with per-schema oldest timestamp.
+- `uk_aq_ops.obs_aqidb_day_counts_current`: latest exact UTC-day row counts for live `observs` and `aqilevels` calendar presence.
 - `uk_aq_ops.r2_domain_size_metrics_hourly`: hourly R2 History domain size points for `observations` and `aqilevels`.
 - Primary local samplers:
   - `uk_aq_ops.uk_aq_db_size_metric_sample_local` via per-DB `pg_cron`
   - `uk_aq_ops.uk_aq_schema_size_metric_sample_local` via separate `obs_aqidb` `pg_cron`
+  - `uk_aq_ops.uk_aq_obs_aqidb_day_counts_refresh_current` via `obs_aqidb` `pg_cron`
 - Public read views:
   - `uk_aq_public.uk_aq_db_size_metrics_hourly`
   - `uk_aq_public.uk_aq_schema_size_metrics_hourly`
+  - `uk_aq_public.uk_aq_obs_aqidb_day_counts_current`
   - `uk_aq_public.uk_aq_r2_domain_size_metrics_hourly`
 - Service-role writer RPCs:
   - `uk_aq_rpc_db_size_metric_upsert` / `uk_aq_rpc_db_size_metric_cleanup`
   - `uk_aq_rpc_schema_size_metric_upsert` / `uk_aq_rpc_schema_size_metric_cleanup`
+  - `uk_aq_rpc_obs_aqidb_day_count_delete`
   - `uk_aq_rpc_r2_domain_size_metric_upsert` / `uk_aq_rpc_r2_domain_size_metric_cleanup`
 
 ## PM2.5 target tracking (optional)
