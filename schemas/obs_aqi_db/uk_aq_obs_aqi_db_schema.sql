@@ -501,7 +501,7 @@ create table if not exists uk_aq_ops.backfill_checkpoints (
   day_utc date not null,
   connector_id integer not null,
   source_kind text not null check (source_kind in ('ingestdb', 'obs_aqidb', 'r2', 'api', 'download', 'manual_file', 'none')),
-  status text not null check (status in ('complete', 'error', 'dry_run', 'skipped')),
+  status text not null check (status in ('complete', 'error', 'dry_run', 'skipped', 'stubbed')),
   rows_read bigint not null default 0,
   rows_written_aqilevels bigint not null default 0,
   objects_written_r2 bigint not null default 0,
@@ -665,6 +665,42 @@ grant all on table uk_aq_ops.backfill_checkpoints to service_role;
 grant all on table uk_aq_ops.backfill_errors to service_role;
 grant usage, select on all sequences in schema uk_aq_ops to service_role;
 
+-- Data API compatibility: expose backfill ledger tables via uk_aq_public
+-- when uk_aq_ops schema exposure is unavailable/stale in PostgREST.
+create or replace view uk_aq_public.backfill_runs as
+select * from uk_aq_ops.backfill_runs;
+alter view if exists uk_aq_public.backfill_runs set (security_invoker = true);
+
+create or replace view uk_aq_public.backfill_run_days as
+select * from uk_aq_ops.backfill_run_days;
+alter view if exists uk_aq_public.backfill_run_days set (security_invoker = true);
+
+create or replace view uk_aq_public.backfill_checkpoints as
+select * from uk_aq_ops.backfill_checkpoints;
+alter view if exists uk_aq_public.backfill_checkpoints set (security_invoker = true);
+
+create or replace view uk_aq_public.backfill_errors as
+select * from uk_aq_ops.backfill_errors;
+alter view if exists uk_aq_public.backfill_errors set (security_invoker = true);
+
+revoke all on table uk_aq_public.backfill_runs from public;
+revoke all on table uk_aq_public.backfill_runs from anon, authenticated;
+grant all on table uk_aq_public.backfill_runs to service_role;
+
+revoke all on table uk_aq_public.backfill_run_days from public;
+revoke all on table uk_aq_public.backfill_run_days from anon, authenticated;
+grant all on table uk_aq_public.backfill_run_days to service_role;
+
+revoke all on table uk_aq_public.backfill_checkpoints from public;
+revoke all on table uk_aq_public.backfill_checkpoints from anon, authenticated;
+grant all on table uk_aq_public.backfill_checkpoints to service_role;
+
+revoke all on table uk_aq_public.backfill_errors from public;
+revoke all on table uk_aq_public.backfill_errors from anon, authenticated;
+grant all on table uk_aq_public.backfill_errors to service_role;
+
+grant usage on schema uk_aq_public to service_role;
+
 create or replace view uk_aq_public.uk_aq_db_size_metrics_hourly as
 select
   bucket_hour,
@@ -778,6 +814,106 @@ begin
 end;
 $$;
 
+create or replace function uk_aq_ops.uk_aq_schema_size_metric_sample_local(
+  p_retention_days integer default 120,
+  p_recorded_at timestamptz default now(),
+  p_source text default 'uk_aq_schema_size_metrics_pg_cron'
+)
+returns table (
+  rows_upserted int,
+  rows_deleted bigint
+)
+language plpgsql
+security definer
+set search_path = uk_aq_ops, public, pg_catalog
+as $$
+declare
+  v_days integer;
+  v_bucket_hour timestamptz;
+  v_rows_upserted int := 0;
+  v_rows_deleted bigint := 0;
+  v_rows int := 0;
+  v_source text;
+  v_schema text;
+  v_size_bytes bigint := 0;
+  v_oldest_observed_at timestamptz := null;
+begin
+  set local timezone = 'UTC';
+  -- Guard against short inherited role/session statement timeouts during
+  -- relation-size scans across the obs_aqidb schemas.
+  set local statement_timeout = '15min';
+
+  v_days := greatest(1, least(coalesce(p_retention_days, 120), 3650));
+  v_bucket_hour := date_trunc('hour', coalesce(p_recorded_at, now()));
+  v_source := coalesce(nullif(btrim(p_source), ''), 'uk_aq_schema_size_metrics_pg_cron');
+
+  foreach v_schema in array array['uk_aq_observs', 'uk_aq_aqilevels'] loop
+    v_size_bytes := 0;
+    v_oldest_observed_at := null;
+
+    if to_regnamespace(v_schema) is not null then
+      execute format(
+        $sql$
+          select coalesce(sum(pg_total_relation_size(c.oid)), 0)::bigint
+          from pg_class c
+          join pg_namespace n on n.oid = c.relnamespace
+          where n.nspname = %L
+            and c.relkind in ('r', 'p', 'm', 't')
+        $sql$,
+        v_schema
+      ) into v_size_bytes;
+
+      if v_schema = 'uk_aq_observs'
+         and to_regclass('uk_aq_observs.observations') is not null then
+        execute 'select min(o.observed_at) from uk_aq_observs.observations o'
+          into v_oldest_observed_at;
+      elsif v_schema = 'uk_aq_aqilevels'
+            and to_regclass('uk_aq_aqilevels.station_aqi_hourly') is not null then
+        execute 'select min(a.timestamp_hour_utc) from uk_aq_aqilevels.station_aqi_hourly a'
+          into v_oldest_observed_at;
+      end if;
+    end if;
+
+    insert into uk_aq_ops.schema_size_metrics_hourly (
+      bucket_hour,
+      database_label,
+      schema_name,
+      size_bytes,
+      oldest_observed_at,
+      source,
+      recorded_at,
+      updated_at
+    )
+    values (
+      v_bucket_hour,
+      'obs_aqidb',
+      v_schema,
+      coalesce(v_size_bytes, 0),
+      v_oldest_observed_at,
+      v_source,
+      coalesce(p_recorded_at, now()),
+      now()
+    )
+    on conflict (bucket_hour, database_label, schema_name) do update set
+      size_bytes = excluded.size_bytes,
+      oldest_observed_at = excluded.oldest_observed_at,
+      source = excluded.source,
+      recorded_at = excluded.recorded_at,
+      updated_at = now();
+
+    get diagnostics v_rows = row_count;
+    v_rows_upserted := v_rows_upserted + coalesce(v_rows, 0);
+  end loop;
+
+  delete from uk_aq_ops.schema_size_metrics_hourly
+  where bucket_hour < now() - make_interval(days => v_days);
+
+  get diagnostics v_rows_deleted = row_count;
+
+  return query select v_rows_upserted, v_rows_deleted;
+end;
+$$;
+
 select cron.unschedule(jobid)
 from cron.job
 where jobname in (
@@ -786,8 +922,20 @@ where jobname in (
 
 select cron.schedule(
   'uk_aq_obs_aqidb_db_size_metrics_hourly',
-  '2 * * * *',
+  '1 * * * *',
   $$select * from uk_aq_ops.uk_aq_db_size_metric_sample_local();$$
+);
+
+select cron.unschedule(jobid)
+from cron.job
+where jobname in (
+  'uk_aq_obs_aqidb_schema_size_metrics_hourly'
+);
+
+select cron.schedule(
+  'uk_aq_obs_aqidb_schema_size_metrics_hourly',
+  '2 * * * *',
+  $$select * from uk_aq_ops.uk_aq_schema_size_metric_sample_local();$$
 );
 
 -- Shared obs AQI DB full-database vacuum at 05:00 UTC.
@@ -842,7 +990,8 @@ begin
   select
     current_database()::text as database_name,
     (
-      pg_database_size(current_database())::bigint
+      select coalesce(sum(pg_database_size(pg_database.datname)), 0)::bigint
+      from pg_database
     ) as size_bytes,
     v_oldest_observed_at as oldest_observed_at,
     now() as sampled_at;
@@ -1088,6 +1237,9 @@ grant execute on function uk_aq_public.uk_aq_rpc_schema_size_metric_cleanup(inte
 
 revoke all on function uk_aq_ops.uk_aq_db_size_metric_sample_local(integer, timestamptz, text) from public;
 grant execute on function uk_aq_ops.uk_aq_db_size_metric_sample_local(integer, timestamptz, text) to service_role;
+
+revoke all on function uk_aq_ops.uk_aq_schema_size_metric_sample_local(integer, timestamptz, text) from public;
+grant execute on function uk_aq_ops.uk_aq_schema_size_metric_sample_local(integer, timestamptz, text) to service_role;
 
 revoke all on uk_aq_public.uk_aq_db_size_metrics_hourly from public;
 grant select on uk_aq_public.uk_aq_db_size_metrics_hourly to authenticated;

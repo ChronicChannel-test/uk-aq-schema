@@ -57,6 +57,9 @@ This document summarizes the schema defined in `schemas/uk_air_quality_schema.sq
 - `uk_aq_ops.db_size_metrics_hourly`: hourly DB cluster size points keyed by `database_label` (target hard-cut labels: `ingestdb`, `obs_aqidb`).
 - `uk_aq_ops.schema_size_metrics_hourly`: hourly schema size points for `uk_aq_observs` and `uk_aq_aqilevels` with per-schema oldest timestamp.
 - `uk_aq_ops.r2_domain_size_metrics_hourly`: hourly R2 History domain size points for `observations` and `aqilevels`.
+- Primary local samplers:
+  - `uk_aq_ops.uk_aq_db_size_metric_sample_local` via per-DB `pg_cron`
+  - `uk_aq_ops.uk_aq_schema_size_metric_sample_local` via separate `obs_aqidb` `pg_cron`
 - Public read views:
   - `uk_aq_public.uk_aq_db_size_metrics_hourly`
   - `uk_aq_public.uk_aq_schema_size_metrics_hourly`

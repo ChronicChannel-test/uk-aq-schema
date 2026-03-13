@@ -58,7 +58,7 @@ create table if not exists uk_aq_ops.backfill_checkpoints (
   day_utc date not null,
   connector_id integer not null,
   source_kind text not null check (source_kind in ('ingestdb', 'obs_aqidb', 'r2', 'api', 'download', 'manual_file', 'none')),
-  status text not null check (status in ('complete', 'error', 'dry_run', 'skipped')),
+  status text not null check (status in ('complete', 'error', 'dry_run', 'skipped', 'stubbed')),
   rows_read bigint not null default 0,
   rows_written_aqilevels bigint not null default 0,
   objects_written_r2 bigint not null default 0,
@@ -222,3 +222,41 @@ grant all on table uk_aq_ops.backfill_run_days to service_role;
 grant all on table uk_aq_ops.backfill_checkpoints to service_role;
 grant all on table uk_aq_ops.backfill_errors to service_role;
 grant usage, select on all sequences in schema uk_aq_ops to service_role;
+
+create schema if not exists uk_aq_public;
+
+-- Data API compatibility: expose backfill ledger tables via uk_aq_public
+-- when uk_aq_ops schema exposure is unavailable/stale in PostgREST.
+create or replace view uk_aq_public.backfill_runs as
+select * from uk_aq_ops.backfill_runs;
+alter view if exists uk_aq_public.backfill_runs set (security_invoker = true);
+
+create or replace view uk_aq_public.backfill_run_days as
+select * from uk_aq_ops.backfill_run_days;
+alter view if exists uk_aq_public.backfill_run_days set (security_invoker = true);
+
+create or replace view uk_aq_public.backfill_checkpoints as
+select * from uk_aq_ops.backfill_checkpoints;
+alter view if exists uk_aq_public.backfill_checkpoints set (security_invoker = true);
+
+create or replace view uk_aq_public.backfill_errors as
+select * from uk_aq_ops.backfill_errors;
+alter view if exists uk_aq_public.backfill_errors set (security_invoker = true);
+
+revoke all on table uk_aq_public.backfill_runs from public;
+revoke all on table uk_aq_public.backfill_runs from anon, authenticated;
+grant all on table uk_aq_public.backfill_runs to service_role;
+
+revoke all on table uk_aq_public.backfill_run_days from public;
+revoke all on table uk_aq_public.backfill_run_days from anon, authenticated;
+grant all on table uk_aq_public.backfill_run_days to service_role;
+
+revoke all on table uk_aq_public.backfill_checkpoints from public;
+revoke all on table uk_aq_public.backfill_checkpoints from anon, authenticated;
+grant all on table uk_aq_public.backfill_checkpoints to service_role;
+
+revoke all on table uk_aq_public.backfill_errors from public;
+revoke all on table uk_aq_public.backfill_errors from anon, authenticated;
+grant all on table uk_aq_public.backfill_errors to service_role;
+
+grant usage on schema uk_aq_public to service_role;
