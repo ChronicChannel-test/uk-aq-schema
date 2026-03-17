@@ -196,6 +196,14 @@ drop function if exists uk_aq_public.uk_aq_rpc_observs_history_day_rows(
   timestamptz,
   integer
 );
+drop function if exists uk_aq_public.uk_aq_rpc_observs_timeseries_window(
+  integer,
+  integer,
+  timestamptz,
+  timestamptz,
+  timestamptz,
+  integer
+);
 create or replace function uk_aq_public.uk_aq_rpc_observs_history_day_rows(
   p_day_utc date,
   p_connector_id integer,
@@ -252,6 +260,69 @@ begin
       or (o.timeseries_id = p_after_timeseries_id and o.observed_at > p_after_observed_at)
     )
   order by o.timeseries_id asc, o.observed_at asc
+  limit v_limit;
+end;
+$$;
+
+create or replace function uk_aq_public.uk_aq_rpc_observs_timeseries_window(
+  p_connector_id integer,
+  p_timeseries_id integer,
+  p_start_utc timestamptz,
+  p_end_utc timestamptz,
+  p_since_ts timestamptz default null,
+  p_limit integer default null
+)
+returns table (
+  observed_at timestamptz,
+  value double precision
+)
+language plpgsql
+security definer
+set search_path = uk_aq_observs, public, pg_catalog
+as $$
+declare
+  v_limit integer;
+begin
+  if auth.role() <> 'service_role' then
+    raise exception 'service_role required';
+  end if;
+
+  if p_connector_id is null or p_connector_id <= 0 then
+    raise exception 'p_connector_id must be > 0';
+  end if;
+
+  if p_timeseries_id is null or p_timeseries_id <= 0 then
+    raise exception 'p_timeseries_id must be > 0';
+  end if;
+
+  if p_start_utc is null or p_end_utc is null then
+    raise exception 'p_start_utc and p_end_utc are required';
+  end if;
+
+  if p_end_utc <= p_start_utc then
+    raise exception 'p_end_utc must be greater than p_start_utc';
+  end if;
+
+  if p_limit is null then
+    v_limit := 2147483647;
+  else
+    v_limit := greatest(1, least(p_limit, 100000));
+  end if;
+
+  return query
+  select
+    o.observed_at,
+    o.value
+  from uk_aq_observs.observations o
+  where o.connector_id = p_connector_id
+    and o.timeseries_id = p_timeseries_id
+    and o.observed_at >= p_start_utc
+    and o.observed_at < p_end_utc
+    and (
+      p_since_ts is null
+      or o.observed_at > p_since_ts
+    )
+  order by o.observed_at asc
   limit v_limit;
 end;
 $$;
@@ -1364,6 +1435,31 @@ grant execute on function uk_aq_public.uk_aq_rpc_observs_history_day_rows(
   date,
   integer,
   integer,
+  timestamptz,
+  integer
+) to service_role;
+
+revoke execute on function uk_aq_public.uk_aq_rpc_observs_timeseries_window(
+  integer,
+  integer,
+  timestamptz,
+  timestamptz,
+  timestamptz,
+  integer
+) from public;
+revoke execute on function uk_aq_public.uk_aq_rpc_observs_timeseries_window(
+  integer,
+  integer,
+  timestamptz,
+  timestamptz,
+  timestamptz,
+  integer
+) from anon, authenticated;
+grant execute on function uk_aq_public.uk_aq_rpc_observs_timeseries_window(
+  integer,
+  integer,
+  timestamptz,
+  timestamptz,
   timestamptz,
   integer
 ) to service_role;
