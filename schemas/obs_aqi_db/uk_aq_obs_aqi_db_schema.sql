@@ -2208,63 +2208,63 @@ insert into uk_aq_aqilevels.aqi_breakpoints (
 values
   -- DAQI NO2 (hourly mean).
   ('daqi','uk_daqi_2013_v1','no2','hourly_mean',1,'1','low','#79BC6A',0,67,'ug/m3',date '2013-01-01',null),
-  ('daqi','uk_daqi_2013_v1','no2','hourly_mean',2,'2','low','#79BC6A',68,134,'ug/m3',date '2013-01-01',null),
-  ('daqi','uk_daqi_2013_v1','no2','hourly_mean',3,'3','low','#79BC6A',135,200,'ug/m3',date '2013-01-01',null),
-  ('daqi','uk_daqi_2013_v1','no2','hourly_mean',4,'4','moderate','#BBCF4C',201,267,'ug/m3',date '2013-01-01',null),
-  ('daqi','uk_daqi_2013_v1','no2','hourly_mean',5,'5','moderate','#BBCF4C',268,334,'ug/m3',date '2013-01-01',null),
-  ('daqi','uk_daqi_2013_v1','no2','hourly_mean',6,'6','moderate','#BBCF4C',335,400,'ug/m3',date '2013-01-01',null),
-  ('daqi','uk_daqi_2013_v1','no2','hourly_mean',7,'7','high','#EEC20B',401,467,'ug/m3',date '2013-01-01',null),
-  ('daqi','uk_daqi_2013_v1','no2','hourly_mean',8,'8','high','#EEC20B',468,534,'ug/m3',date '2013-01-01',null),
-  ('daqi','uk_daqi_2013_v1','no2','hourly_mean',9,'9','high','#EEC20B',535,600,'ug/m3',date '2013-01-01',null),
-  ('daqi','uk_daqi_2013_v1','no2','hourly_mean',10,'10','very_high','#F29305',601,null,'ug/m3',date '2013-01-01',null),
+  ('daqi','uk_daqi_2013_v1','no2','hourly_mean',2,'2','low','#79BC6A',67,134,'ug/m3',date '2013-01-01',null),
+  ('daqi','uk_daqi_2013_v1','no2','hourly_mean',3,'3','low','#79BC6A',134,200,'ug/m3',date '2013-01-01',null),
+  ('daqi','uk_daqi_2013_v1','no2','hourly_mean',4,'4','moderate','#BBCF4C',200,267,'ug/m3',date '2013-01-01',null),
+  ('daqi','uk_daqi_2013_v1','no2','hourly_mean',5,'5','moderate','#BBCF4C',267,334,'ug/m3',date '2013-01-01',null),
+  ('daqi','uk_daqi_2013_v1','no2','hourly_mean',6,'6','moderate','#BBCF4C',334,400,'ug/m3',date '2013-01-01',null),
+  ('daqi','uk_daqi_2013_v1','no2','hourly_mean',7,'7','high','#EEC20B',400,467,'ug/m3',date '2013-01-01',null),
+  ('daqi','uk_daqi_2013_v1','no2','hourly_mean',8,'8','high','#EEC20B',467,534,'ug/m3',date '2013-01-01',null),
+  ('daqi','uk_daqi_2013_v1','no2','hourly_mean',9,'9','high','#EEC20B',534,600,'ug/m3',date '2013-01-01',null),
+  ('daqi','uk_daqi_2013_v1','no2','hourly_mean',10,'10','very_high','#F29305',600,null,'ug/m3',date '2013-01-01',null),
 
   -- DAQI PM2.5 (rolling 24h mean).
   ('daqi','uk_daqi_2013_v1','pm25','rolling_24h_mean',1,'1','low','#79BC6A',0,11,'ug/m3',date '2013-01-01',null),
-  ('daqi','uk_daqi_2013_v1','pm25','rolling_24h_mean',2,'2','low','#79BC6A',12,23,'ug/m3',date '2013-01-01',null),
-  ('daqi','uk_daqi_2013_v1','pm25','rolling_24h_mean',3,'3','low','#79BC6A',24,35,'ug/m3',date '2013-01-01',null),
-  ('daqi','uk_daqi_2013_v1','pm25','rolling_24h_mean',4,'4','moderate','#BBCF4C',36,41,'ug/m3',date '2013-01-01',null),
-  ('daqi','uk_daqi_2013_v1','pm25','rolling_24h_mean',5,'5','moderate','#BBCF4C',42,47,'ug/m3',date '2013-01-01',null),
-  ('daqi','uk_daqi_2013_v1','pm25','rolling_24h_mean',6,'6','moderate','#BBCF4C',48,53,'ug/m3',date '2013-01-01',null),
-  ('daqi','uk_daqi_2013_v1','pm25','rolling_24h_mean',7,'7','high','#EEC20B',54,58,'ug/m3',date '2013-01-01',null),
-  ('daqi','uk_daqi_2013_v1','pm25','rolling_24h_mean',8,'8','high','#EEC20B',59,64,'ug/m3',date '2013-01-01',null),
-  ('daqi','uk_daqi_2013_v1','pm25','rolling_24h_mean',9,'9','high','#EEC20B',65,70,'ug/m3',date '2013-01-01',null),
-  ('daqi','uk_daqi_2013_v1','pm25','rolling_24h_mean',10,'10','very_high','#F29305',71,null,'ug/m3',date '2013-01-01',null),
+  ('daqi','uk_daqi_2013_v1','pm25','rolling_24h_mean',2,'2','low','#79BC6A',11,23,'ug/m3',date '2013-01-01',null),
+  ('daqi','uk_daqi_2013_v1','pm25','rolling_24h_mean',3,'3','low','#79BC6A',23,35,'ug/m3',date '2013-01-01',null),
+  ('daqi','uk_daqi_2013_v1','pm25','rolling_24h_mean',4,'4','moderate','#BBCF4C',35,41,'ug/m3',date '2013-01-01',null),
+  ('daqi','uk_daqi_2013_v1','pm25','rolling_24h_mean',5,'5','moderate','#BBCF4C',41,47,'ug/m3',date '2013-01-01',null),
+  ('daqi','uk_daqi_2013_v1','pm25','rolling_24h_mean',6,'6','moderate','#BBCF4C',47,53,'ug/m3',date '2013-01-01',null),
+  ('daqi','uk_daqi_2013_v1','pm25','rolling_24h_mean',7,'7','high','#EEC20B',53,58,'ug/m3',date '2013-01-01',null),
+  ('daqi','uk_daqi_2013_v1','pm25','rolling_24h_mean',8,'8','high','#EEC20B',58,64,'ug/m3',date '2013-01-01',null),
+  ('daqi','uk_daqi_2013_v1','pm25','rolling_24h_mean',9,'9','high','#EEC20B',64,70,'ug/m3',date '2013-01-01',null),
+  ('daqi','uk_daqi_2013_v1','pm25','rolling_24h_mean',10,'10','very_high','#F29305',70,null,'ug/m3',date '2013-01-01',null),
 
   -- DAQI PM10 (rolling 24h mean).
   ('daqi','uk_daqi_2013_v1','pm10','rolling_24h_mean',1,'1','low','#79BC6A',0,16,'ug/m3',date '2013-01-01',null),
-  ('daqi','uk_daqi_2013_v1','pm10','rolling_24h_mean',2,'2','low','#79BC6A',17,33,'ug/m3',date '2013-01-01',null),
-  ('daqi','uk_daqi_2013_v1','pm10','rolling_24h_mean',3,'3','low','#79BC6A',34,50,'ug/m3',date '2013-01-01',null),
-  ('daqi','uk_daqi_2013_v1','pm10','rolling_24h_mean',4,'4','moderate','#BBCF4C',51,58,'ug/m3',date '2013-01-01',null),
-  ('daqi','uk_daqi_2013_v1','pm10','rolling_24h_mean',5,'5','moderate','#BBCF4C',59,66,'ug/m3',date '2013-01-01',null),
-  ('daqi','uk_daqi_2013_v1','pm10','rolling_24h_mean',6,'6','moderate','#BBCF4C',67,75,'ug/m3',date '2013-01-01',null),
-  ('daqi','uk_daqi_2013_v1','pm10','rolling_24h_mean',7,'7','high','#EEC20B',76,83,'ug/m3',date '2013-01-01',null),
-  ('daqi','uk_daqi_2013_v1','pm10','rolling_24h_mean',8,'8','high','#EEC20B',84,91,'ug/m3',date '2013-01-01',null),
-  ('daqi','uk_daqi_2013_v1','pm10','rolling_24h_mean',9,'9','high','#EEC20B',92,100,'ug/m3',date '2013-01-01',null),
-  ('daqi','uk_daqi_2013_v1','pm10','rolling_24h_mean',10,'10','very_high','#F29305',101,null,'ug/m3',date '2013-01-01',null),
+  ('daqi','uk_daqi_2013_v1','pm10','rolling_24h_mean',2,'2','low','#79BC6A',16,33,'ug/m3',date '2013-01-01',null),
+  ('daqi','uk_daqi_2013_v1','pm10','rolling_24h_mean',3,'3','low','#79BC6A',33,50,'ug/m3',date '2013-01-01',null),
+  ('daqi','uk_daqi_2013_v1','pm10','rolling_24h_mean',4,'4','moderate','#BBCF4C',50,58,'ug/m3',date '2013-01-01',null),
+  ('daqi','uk_daqi_2013_v1','pm10','rolling_24h_mean',5,'5','moderate','#BBCF4C',58,66,'ug/m3',date '2013-01-01',null),
+  ('daqi','uk_daqi_2013_v1','pm10','rolling_24h_mean',6,'6','moderate','#BBCF4C',66,75,'ug/m3',date '2013-01-01',null),
+  ('daqi','uk_daqi_2013_v1','pm10','rolling_24h_mean',7,'7','high','#EEC20B',75,83,'ug/m3',date '2013-01-01',null),
+  ('daqi','uk_daqi_2013_v1','pm10','rolling_24h_mean',8,'8','high','#EEC20B',83,91,'ug/m3',date '2013-01-01',null),
+  ('daqi','uk_daqi_2013_v1','pm10','rolling_24h_mean',9,'9','high','#EEC20B',91,100,'ug/m3',date '2013-01-01',null),
+  ('daqi','uk_daqi_2013_v1','pm10','rolling_24h_mean',10,'10','very_high','#F29305',100,null,'ug/m3',date '2013-01-01',null),
 
   -- EAQI PM2.5 (hourly mean).
   ('eaqi','eea_eaqi_hourly_v1','pm25','hourly_mean',1,'Good','good','#50F0E6',0,5,'ug/m3',date '2020-01-01',null),
-  ('eaqi','eea_eaqi_hourly_v1','pm25','hourly_mean',2,'Fair','fair','#50CCAA',6,15,'ug/m3',date '2020-01-01',null),
-  ('eaqi','eea_eaqi_hourly_v1','pm25','hourly_mean',3,'Moderate','moderate','#F0E641',16,50,'ug/m3',date '2020-01-01',null),
-  ('eaqi','eea_eaqi_hourly_v1','pm25','hourly_mean',4,'Poor','poor','#FF5050',51,90,'ug/m3',date '2020-01-01',null),
-  ('eaqi','eea_eaqi_hourly_v1','pm25','hourly_mean',5,'Very poor','very_poor','#960032',91,140,'ug/m3',date '2020-01-01',null),
-  ('eaqi','eea_eaqi_hourly_v1','pm25','hourly_mean',6,'Extremely poor','extremely_poor','#7D2181',141,null,'ug/m3',date '2020-01-01',null),
+  ('eaqi','eea_eaqi_hourly_v1','pm25','hourly_mean',2,'Fair','fair','#50CCAA',5,15,'ug/m3',date '2020-01-01',null),
+  ('eaqi','eea_eaqi_hourly_v1','pm25','hourly_mean',3,'Moderate','moderate','#F0E641',15,50,'ug/m3',date '2020-01-01',null),
+  ('eaqi','eea_eaqi_hourly_v1','pm25','hourly_mean',4,'Poor','poor','#FF5050',50,90,'ug/m3',date '2020-01-01',null),
+  ('eaqi','eea_eaqi_hourly_v1','pm25','hourly_mean',5,'Very poor','very_poor','#960032',90,140,'ug/m3',date '2020-01-01',null),
+  ('eaqi','eea_eaqi_hourly_v1','pm25','hourly_mean',6,'Extremely poor','extremely_poor','#7D2181',140,null,'ug/m3',date '2020-01-01',null),
 
   -- EAQI PM10 (hourly mean).
   ('eaqi','eea_eaqi_hourly_v1','pm10','hourly_mean',1,'Good','good','#50F0E6',0,15,'ug/m3',date '2020-01-01',null),
-  ('eaqi','eea_eaqi_hourly_v1','pm10','hourly_mean',2,'Fair','fair','#50CCAA',16,45,'ug/m3',date '2020-01-01',null),
-  ('eaqi','eea_eaqi_hourly_v1','pm10','hourly_mean',3,'Moderate','moderate','#F0E641',46,120,'ug/m3',date '2020-01-01',null),
-  ('eaqi','eea_eaqi_hourly_v1','pm10','hourly_mean',4,'Poor','poor','#FF5050',121,195,'ug/m3',date '2020-01-01',null),
-  ('eaqi','eea_eaqi_hourly_v1','pm10','hourly_mean',5,'Very poor','very_poor','#960032',196,270,'ug/m3',date '2020-01-01',null),
-  ('eaqi','eea_eaqi_hourly_v1','pm10','hourly_mean',6,'Extremely poor','extremely_poor','#7D2181',271,null,'ug/m3',date '2020-01-01',null),
+  ('eaqi','eea_eaqi_hourly_v1','pm10','hourly_mean',2,'Fair','fair','#50CCAA',15,45,'ug/m3',date '2020-01-01',null),
+  ('eaqi','eea_eaqi_hourly_v1','pm10','hourly_mean',3,'Moderate','moderate','#F0E641',45,120,'ug/m3',date '2020-01-01',null),
+  ('eaqi','eea_eaqi_hourly_v1','pm10','hourly_mean',4,'Poor','poor','#FF5050',120,195,'ug/m3',date '2020-01-01',null),
+  ('eaqi','eea_eaqi_hourly_v1','pm10','hourly_mean',5,'Very poor','very_poor','#960032',195,270,'ug/m3',date '2020-01-01',null),
+  ('eaqi','eea_eaqi_hourly_v1','pm10','hourly_mean',6,'Extremely poor','extremely_poor','#7D2181',270,null,'ug/m3',date '2020-01-01',null),
 
   -- EAQI NO2 (hourly mean).
   ('eaqi','eea_eaqi_hourly_v1','no2','hourly_mean',1,'Good','good','#50F0E6',0,10,'ug/m3',date '2020-01-01',null),
-  ('eaqi','eea_eaqi_hourly_v1','no2','hourly_mean',2,'Fair','fair','#50CCAA',11,25,'ug/m3',date '2020-01-01',null),
-  ('eaqi','eea_eaqi_hourly_v1','no2','hourly_mean',3,'Moderate','moderate','#F0E641',26,60,'ug/m3',date '2020-01-01',null),
-  ('eaqi','eea_eaqi_hourly_v1','no2','hourly_mean',4,'Poor','poor','#FF5050',61,100,'ug/m3',date '2020-01-01',null),
-  ('eaqi','eea_eaqi_hourly_v1','no2','hourly_mean',5,'Very poor','very_poor','#960032',101,150,'ug/m3',date '2020-01-01',null),
-  ('eaqi','eea_eaqi_hourly_v1','no2','hourly_mean',6,'Extremely poor','extremely_poor','#7D2181',151,null,'ug/m3',date '2020-01-01',null)
+  ('eaqi','eea_eaqi_hourly_v1','no2','hourly_mean',2,'Fair','fair','#50CCAA',10,25,'ug/m3',date '2020-01-01',null),
+  ('eaqi','eea_eaqi_hourly_v1','no2','hourly_mean',3,'Moderate','moderate','#F0E641',25,60,'ug/m3',date '2020-01-01',null),
+  ('eaqi','eea_eaqi_hourly_v1','no2','hourly_mean',4,'Poor','poor','#FF5050',60,100,'ug/m3',date '2020-01-01',null),
+  ('eaqi','eea_eaqi_hourly_v1','no2','hourly_mean',5,'Very poor','very_poor','#960032',100,150,'ug/m3',date '2020-01-01',null),
+  ('eaqi','eea_eaqi_hourly_v1','no2','hourly_mean',6,'Extremely poor','extremely_poor','#7D2181',150,null,'ug/m3',date '2020-01-01',null)
 on conflict (
   standard_code,
   version_code,
@@ -2526,7 +2526,14 @@ as $$
     and (v.valid_to is null or v.valid_to >= p_effective_date)
     and (b.valid_from is null or b.valid_from <= p_effective_date)
     and (b.valid_to is null or b.valid_to >= p_effective_date)
-    and p_value >= b.range_low
+    and p_value >= (
+      select min(b0.range_low)
+      from uk_aq_aqilevels.aqi_breakpoints b0
+      where b0.standard_code = b.standard_code
+        and b0.version_code = b.version_code
+        and b0.pollutant_code = b.pollutant_code
+        and b0.averaging_code = b.averaging_code
+    )
     and (b.range_high is null or p_value <= b.range_high)
   order by b.index_level
   limit 1;
