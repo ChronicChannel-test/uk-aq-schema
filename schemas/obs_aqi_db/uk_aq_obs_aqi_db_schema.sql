@@ -464,7 +464,7 @@ create index if not exists obs_aqidb_day_counts_current_dataset_day_idx
 -- Backfill run/ledger tables used by uk_aq_backfill_cloud_run.
 create table if not exists uk_aq_ops.backfill_runs (
   run_id uuid primary key,
-  run_mode text not null check (run_mode in ('local_to_aqilevels', 'obs_aqi_to_r2', 'source_to_r2')),
+  run_mode text not null check (run_mode in ('local_to_aqilevels', 'obs_aqi_to_r2', 'source_to_r2', 'r2_history_obs_to_aqilevels')),
   trigger_mode text not null check (trigger_mode in ('manual', 'scheduler')),
   window_from_utc date not null,
   window_to_utc date not null,
@@ -489,7 +489,7 @@ create index if not exists backfill_runs_started_at_idx
 create table if not exists uk_aq_ops.backfill_run_days (
   id bigserial primary key,
   run_id uuid not null references uk_aq_ops.backfill_runs(run_id) on delete cascade,
-  run_mode text not null check (run_mode in ('local_to_aqilevels', 'obs_aqi_to_r2', 'source_to_r2')),
+  run_mode text not null check (run_mode in ('local_to_aqilevels', 'obs_aqi_to_r2', 'source_to_r2', 'r2_history_obs_to_aqilevels')),
   day_utc date not null,
   connector_id integer not null,
   source_kind text not null check (source_kind in ('ingestdb', 'obs_aqidb', 'r2', 'api', 'download', 'manual_file', 'none')),
@@ -512,7 +512,7 @@ create index if not exists backfill_run_days_lookup_idx
   on uk_aq_ops.backfill_run_days (run_mode, day_utc desc, connector_id);
 
 create table if not exists uk_aq_ops.backfill_checkpoints (
-  run_mode text not null check (run_mode in ('local_to_aqilevels', 'obs_aqi_to_r2', 'source_to_r2')),
+  run_mode text not null check (run_mode in ('local_to_aqilevels', 'obs_aqi_to_r2', 'source_to_r2', 'r2_history_obs_to_aqilevels')),
   day_utc date not null,
   connector_id integer not null,
   source_kind text not null check (source_kind in ('ingestdb', 'obs_aqidb', 'r2', 'api', 'download', 'manual_file', 'none')),
@@ -532,7 +532,7 @@ create index if not exists backfill_checkpoints_day_connector_idx
 create table if not exists uk_aq_ops.backfill_errors (
   id bigserial primary key,
   run_id uuid,
-  run_mode text not null check (run_mode in ('local_to_aqilevels', 'obs_aqi_to_r2', 'source_to_r2')),
+  run_mode text not null check (run_mode in ('local_to_aqilevels', 'obs_aqi_to_r2', 'source_to_r2', 'r2_history_obs_to_aqilevels')),
   day_utc date,
   connector_id integer,
   source_kind text,
@@ -592,19 +592,19 @@ begin
 
   alter table uk_aq_ops.backfill_runs
     add constraint backfill_runs_run_mode_check
-    check (run_mode in ('local_to_aqilevels', 'obs_aqi_to_r2', 'source_to_r2'));
+    check (run_mode in ('local_to_aqilevels', 'obs_aqi_to_r2', 'source_to_r2', 'r2_history_obs_to_aqilevels'));
 
   alter table uk_aq_ops.backfill_run_days
     add constraint backfill_run_days_run_mode_check
-    check (run_mode in ('local_to_aqilevels', 'obs_aqi_to_r2', 'source_to_r2'));
+    check (run_mode in ('local_to_aqilevels', 'obs_aqi_to_r2', 'source_to_r2', 'r2_history_obs_to_aqilevels'));
 
   alter table uk_aq_ops.backfill_checkpoints
     add constraint backfill_checkpoints_run_mode_check
-    check (run_mode in ('local_to_aqilevels', 'obs_aqi_to_r2', 'source_to_r2'));
+    check (run_mode in ('local_to_aqilevels', 'obs_aqi_to_r2', 'source_to_r2', 'r2_history_obs_to_aqilevels'));
 
   alter table uk_aq_ops.backfill_errors
     add constraint backfill_errors_run_mode_check
-    check (run_mode in ('local_to_aqilevels', 'obs_aqi_to_r2', 'source_to_r2'));
+    check (run_mode in ('local_to_aqilevels', 'obs_aqi_to_r2', 'source_to_r2', 'r2_history_obs_to_aqilevels'));
 end $$;
 
 create index if not exists backfill_errors_run_idx
@@ -756,6 +756,13 @@ select
   updated_at
 from uk_aq_ops.obs_aqidb_day_counts_current;
 alter view if exists uk_aq_public.uk_aq_obs_aqidb_day_counts_current set (security_invoker = true);
+
+create or replace view uk_aq_public.uk_aq_station_connector_lookup as
+select
+  id as station_id,
+  connector_id
+from uk_aq_core.stations;
+alter view if exists uk_aq_public.uk_aq_station_connector_lookup set (security_invoker = true);
 
 create extension if not exists pg_cron with schema extensions;
 
@@ -1502,6 +1509,9 @@ grant select on uk_aq_public.uk_aq_schema_size_metrics_hourly to service_role;
 revoke all on uk_aq_public.uk_aq_obs_aqidb_day_counts_current from public;
 grant select on uk_aq_public.uk_aq_obs_aqidb_day_counts_current to authenticated;
 grant select on uk_aq_public.uk_aq_obs_aqidb_day_counts_current to service_role;
+
+revoke all on uk_aq_public.uk_aq_station_connector_lookup from public;
+grant select on uk_aq_public.uk_aq_station_connector_lookup to service_role;
 
 -- Metadata RPCs for stations_daily mirror verification/sync.
 create or replace function uk_aq_public.uk_aq_rpc_info_schema_columns(
