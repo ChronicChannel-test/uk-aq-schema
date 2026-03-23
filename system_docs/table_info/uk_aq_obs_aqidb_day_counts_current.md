@@ -5,7 +5,7 @@ Exact current per-day row counts for the live `obs_aqidb` retention window.
 ## Purpose
 - Store the latest exact UTC-day row counts for:
   - `observs` from `uk_aq_observs.observations`
-  - `aqilevels` from `uk_aq_aqilevels.station_aqi_hourly`
+- `aqilevels` from `uk_aq_aqilevels.timeseries_aqi_hourly`
 - Give the dashboard a small source of truth for:
   - ObsAQIDB calendar presence
   - exact day counts

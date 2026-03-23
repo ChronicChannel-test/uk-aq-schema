@@ -1,20 +1,23 @@
-# station_aqi_hourly
+# timeseries_aqi_hourly
 
-Station-hour AQI fact table in AggDaily DB.
+Timeseries-hour AQI fact table in ObsAQIDB.
 
 ## Fields
-- station_id: FK to mirrored `uk_aq_core.stations.id`.
+- timeseries_id: FK to `uk_aq_core.timeseries.id`.
+- station_id: nullable FK to `uk_aq_core.stations.id` (denormalized for convenience).
+- connector_id: FK to `uk_aq_core.connectors.id`.
+- pollutant_code: `pm25`, `pm10`, or `no2`.
 - timestamp_hour_utc: UTC hour bucket.
 - `*_hourly_mean_ugm3`: Pollutant hourly means used in index calculations.
 - `pm25_rolling24h_mean_ugm3`, `pm10_rolling24h_mean_ugm3`: Rolling 24-hour means used for DAQI PM levels.
-- `*_hourly_sample_count`: Hourly sample counts selected for each pollutant.
+- hourly_sample_count: Hourly sample count for this timeseries + pollutant row.
 - `daqi_no2_index_level`: DAQI level from NO2 hourly mean.
 - `daqi_pm25_rolling24h_index_level`, `daqi_pm10_rolling24h_index_level`: DAQI levels from PM rolling 24-hour means.
 - `eaqi_no2_index_level`, `eaqi_pm25_index_level`, `eaqi_pm10_index_level`: Pollutant-specific EAQI levels from hourly means.
 - created_at, updated_at: Audit timestamps.
 
 ## Notes
-- Primary key is `(station_id, timestamp_hour_utc)`.
+- Primary key is `(timeseries_id, timestamp_hour_utc)`.
 - Rows are upserted idempotently from Cloud Run AQI worker.
 - AQI lookup uses continuous upper-bound threshold matching, so decimal concentrations between published integer legend thresholds do not create gaps.
 - PM2.5 examples:

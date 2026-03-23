@@ -29,7 +29,7 @@ These SQL files are the targeted cutover migrations for Phase 2/3 hard-cut renam
   - apply to `obs_aqidb`
   - fixes DB-size oldest timestamp sampling to use the minimum across:
     - `uk_aq_observs.observations.observed_at`
-    - `uk_aq_aqilevels.station_aqi_hourly.timestamp_hour_utc`
+    - `uk_aq_aqilevels.timeseries_aqi_hourly.timestamp_hour_utc`
   - updates both local pg_cron sampler and public DB-size RPC
 - `2026-03-09_observs_vacuum_full_cron_0500.sql`
   - apply to `obs_aqidb`

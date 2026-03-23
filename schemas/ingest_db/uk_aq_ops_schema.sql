@@ -143,16 +143,27 @@ drop function if exists uk_aq_ops.uk_aq_station_aqi_hourly_ingest_tick(
   bigint[]
 );
 
-create or replace function uk_aq_ops.uk_aq_station_aqi_hourly_ingest_tick(
+drop function if exists uk_aq_ops.uk_aq_timeseries_aqi_hourly_ingest_tick(
+  timestamptz,
+  integer[],
+  integer
+);
+
+drop function if exists uk_aq_ops.uk_aq_timeseries_aqi_hourly_ingest_tick(
+  timestamptz,
+  integer[]
+);
+
+create or replace function uk_aq_ops.uk_aq_timeseries_aqi_hourly_ingest_tick(
   p_now_utc timestamptz default now(),
-  p_station_ids bigint[] default null,
+  p_timeseries_ids integer[] default null,
   p_helper_retention_days integer default 45
 )
 returns table (
   target_hour_end_utc timestamptz,
   source_rows integer,
   rows_upserted integer,
-  station_hours_changed integer,
+  timeseries_hours_changed integer,
   max_changed_lag_hours numeric,
   helper_rows_deleted bigint
 )
@@ -164,7 +175,7 @@ declare
   v_target_hour_end_utc timestamptz;
   v_source_rows integer := 0;
   v_rows_upserted integer := 0;
-  v_station_hours_changed integer := 0;
+  v_timeseries_hours_changed integer := 0;
   v_max_changed_lag_hours numeric := null;
   v_helper_rows_deleted bigint := 0;
 begin
@@ -176,24 +187,24 @@ begin
   select
     r.source_rows,
     r.rows_upserted,
-    r.station_hours_changed,
+    r.timeseries_hours_changed,
     r.max_changed_lag_hours
   into
     v_source_rows,
     v_rows_upserted,
-    v_station_hours_changed,
+    v_timeseries_hours_changed,
     v_max_changed_lag_hours
-  from uk_aq_public.uk_aq_rpc_station_aqi_hourly_helper_upsert(
+  from uk_aq_public.uk_aq_rpc_timeseries_aqi_hourly_helper_upsert(
     v_target_hour_end_utc - interval '1 hour',
     v_target_hour_end_utc,
-    p_station_ids,
+    p_timeseries_ids,
     v_target_hour_end_utc
   ) r;
 
   select
     c.rows_deleted
   into v_helper_rows_deleted
-  from uk_aq_public.uk_aq_rpc_station_aqi_hourly_helper_cleanup(
+  from uk_aq_public.uk_aq_rpc_timeseries_aqi_hourly_helper_cleanup(
     p_helper_retention_days
   ) c;
 
@@ -202,20 +213,26 @@ begin
     v_target_hour_end_utc,
     coalesce(v_source_rows, 0),
     coalesce(v_rows_upserted, 0),
-    coalesce(v_station_hours_changed, 0),
+    coalesce(v_timeseries_hours_changed, 0),
     v_max_changed_lag_hours,
     coalesce(v_helper_rows_deleted, 0);
 end;
 $$;
 
+-- Remove legacy station helper tick job if present.
 select cron.unschedule(jobid)
 from cron.job
 where jobname = 'uk_aq_ingest_station_aqi_hourly_helper_tick';
 
+-- Ensure only the timeseries helper tick schedule is present.
+select cron.unschedule(jobid)
+from cron.job
+where jobname = 'uk_aq_ingest_timeseries_aqi_hourly_helper_tick';
+
 select cron.schedule(
-  'uk_aq_ingest_station_aqi_hourly_helper_tick',
+  'uk_aq_ingest_timeseries_aqi_hourly_helper_tick',
   '10 * * * *',
-  $$select * from uk_aq_ops.uk_aq_station_aqi_hourly_ingest_tick();$$
+  $$select * from uk_aq_ops.uk_aq_timeseries_aqi_hourly_ingest_tick();$$
 );
 
 grant usage on schema uk_aq_ops to service_role;
@@ -225,13 +242,13 @@ grant all on table uk_aq_ops.r2_domain_size_metrics_hourly to service_role;
 revoke all on function uk_aq_ops.uk_aq_db_size_metric_sample_local(integer, timestamptz, text) from public;
 grant execute on function uk_aq_ops.uk_aq_db_size_metric_sample_local(integer, timestamptz, text) to service_role;
 
-revoke all on function uk_aq_ops.uk_aq_station_aqi_hourly_ingest_tick(
+revoke all on function uk_aq_ops.uk_aq_timeseries_aqi_hourly_ingest_tick(
   timestamptz,
-  bigint[],
+  integer[],
   integer
 ) from public;
-grant execute on function uk_aq_ops.uk_aq_station_aqi_hourly_ingest_tick(
+grant execute on function uk_aq_ops.uk_aq_timeseries_aqi_hourly_ingest_tick(
   timestamptz,
-  bigint[],
+  integer[],
   integer
 ) to service_role;

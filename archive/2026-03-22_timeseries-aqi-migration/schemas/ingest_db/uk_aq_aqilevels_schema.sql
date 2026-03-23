@@ -1,4 +1,4 @@
--- Ingest DB: uk_aq_aqilevels helper schema objects for AQI precompute/sync.
+-- Ingest DB: uk_aq_aqilevels helper schema objects for station AQI precompute/sync.
 
 create schema if not exists uk_aq_aqilevels;
 
@@ -41,6 +41,25 @@ create table if not exists uk_aq_aqilevels.aqi_breakpoints (
     references uk_aq_aqilevels.aqi_standard_versions(standard_code, version_code),
   check (range_high is null or range_high >= range_low)
 );
+
+create table if not exists uk_aq_aqilevels.station_aqi_hourly_helper (
+  station_id bigint not null references uk_aq_core.stations(id) on delete cascade,
+  timestamp_hour_utc timestamptz not null,
+  no2_hourly_mean_ugm3 double precision,
+  pm25_hourly_mean_ugm3 double precision,
+  pm10_hourly_mean_ugm3 double precision,
+  pm25_rolling24h_mean_ugm3 double precision,
+  pm10_rolling24h_mean_ugm3 double precision,
+  no2_hourly_sample_count smallint,
+  pm25_hourly_sample_count smallint,
+  pm10_hourly_sample_count smallint,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (station_id, timestamp_hour_utc)
+);
+
+create index if not exists station_aqi_hourly_helper_hour_idx
+  on uk_aq_aqilevels.station_aqi_hourly_helper (timestamp_hour_utc desc);
 
 insert into uk_aq_aqilevels.aqi_standard_versions (
   standard_code,
@@ -181,7 +200,8 @@ begin
   for t in
     select unnest(ARRAY[
       'aqi_standard_versions',
-      'aqi_breakpoints'
+      'aqi_breakpoints',
+      'station_aqi_hourly_helper'
     ]::text[])
   loop
     execute format('alter table uk_aq_aqilevels.%I enable row level security', t);
@@ -271,6 +291,7 @@ $$;
 grant usage on schema uk_aq_aqilevels to service_role;
 grant all on table uk_aq_aqilevels.aqi_standard_versions to service_role;
 grant all on table uk_aq_aqilevels.aqi_breakpoints to service_role;
+grant all on table uk_aq_aqilevels.station_aqi_hourly_helper to service_role;
 
 revoke all on function uk_aq_aqilevels.uk_aq_aqi_index_lookup(
   text,
@@ -279,64 +300,3 @@ revoke all on function uk_aq_aqilevels.uk_aq_aqi_index_lookup(
   double precision,
   date
 ) from public;
-
--- Phase 1 additive: timeseries-first AQI helper table.
-create table if not exists uk_aq_aqilevels.timeseries_aqi_hourly_helper (
-  timeseries_id integer not null references uk_aq_core.timeseries(id) on delete cascade,
-  station_id bigint references uk_aq_core.stations(id) on delete set null,
-  connector_id integer not null references uk_aq_core.connectors(id) on delete cascade,
-  pollutant_code text not null check (pollutant_code in ('pm25', 'pm10', 'no2')),
-  timestamp_hour_utc timestamptz not null,
-  no2_hourly_mean_ugm3 double precision,
-  pm25_hourly_mean_ugm3 double precision,
-  pm10_hourly_mean_ugm3 double precision,
-  pm25_rolling24h_mean_ugm3 double precision,
-  pm10_rolling24h_mean_ugm3 double precision,
-  hourly_sample_count smallint,
-  updated_at timestamptz not null default now(),
-  primary key (timeseries_id, timestamp_hour_utc)
-);
-
-create index if not exists timeseries_aqi_hourly_helper_hour_idx
-  on uk_aq_aqilevels.timeseries_aqi_hourly_helper (timestamp_hour_utc desc);
-
-create index if not exists timeseries_aqi_hourly_helper_connector_hour_idx
-  on uk_aq_aqilevels.timeseries_aqi_hourly_helper (connector_id, timestamp_hour_utc desc);
-
-do $$
-begin
-  alter table uk_aq_aqilevels.timeseries_aqi_hourly_helper enable row level security;
-
-  if not exists (
-    select 1
-    from pg_policies p
-    where p.schemaname = 'uk_aq_aqilevels'
-      and p.tablename = 'timeseries_aqi_hourly_helper'
-      and p.policyname = 'timeseries_aqi_hourly_helper_select_service_role'
-  ) then
-    create policy timeseries_aqi_hourly_helper_select_service_role
-      on uk_aq_aqilevels.timeseries_aqi_hourly_helper
-      for select
-      using (auth.role() = 'service_role');
-  end if;
-
-  if not exists (
-    select 1
-    from pg_policies p
-    where p.schemaname = 'uk_aq_aqilevels'
-      and p.tablename = 'timeseries_aqi_hourly_helper'
-      and p.policyname = 'timeseries_aqi_hourly_helper_write_service_role'
-  ) then
-    create policy timeseries_aqi_hourly_helper_write_service_role
-      on uk_aq_aqilevels.timeseries_aqi_hourly_helper
-      for all
-      using (auth.role() = 'service_role')
-      with check (auth.role() = 'service_role');
-  end if;
-end
-$$;
-
-grant all on table uk_aq_aqilevels.timeseries_aqi_hourly_helper to service_role;
-
--- Phase 2 hard cut: remove legacy station-focused helper artifact.
-drop table if exists uk_aq_aqilevels.station_aqi_hourly_helper;

@@ -1,9 +1,11 @@
-# station_aqi_monthly
+# timeseries_aqi_monthly
 
-Monthly station rollups for AQI level distributions by standard + pollutant.
+Monthly timeseries rollups for AQI level distributions by standard + pollutant.
 
 ## Fields
-- station_id: FK to mirrored `uk_aq_core.stations.id`.
+- timeseries_id: FK to `uk_aq_core.timeseries.id`.
+- station_id: nullable FK to `uk_aq_core.stations.id` (denormalized for convenience).
+- connector_id: FK to `uk_aq_core.connectors.id`.
 - observed_month: UTC month start date.
 - standard_code: `daqi` or `eaqi`.
 - pollutant_code: `pm25`, `pm10`, `no2`.
@@ -13,5 +15,5 @@ Monthly station rollups for AQI level distributions by standard + pollutant.
 - created_at, updated_at: Audit timestamps.
 
 ## Notes
-- Primary key is `(station_id, observed_month, standard_code, pollutant_code)`.
+- Primary key is `(timeseries_id, observed_month, standard_code, pollutant_code)`.
 - Rebuilt idempotently for affected month ranges.

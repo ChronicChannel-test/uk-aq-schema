@@ -85,7 +85,7 @@ begin
     select
       (h.timestamp_hour_utc at time zone 'UTC')::date as day_utc,
       count(*)::bigint as row_count
-    from uk_aq_aqilevels.station_aqi_hourly h
+    from uk_aq_aqilevels.timeseries_aqi_hourly h
     group by 1
   ),
   aqilevels_days as (
@@ -151,7 +151,7 @@ begin
     select
       (h.timestamp_hour_utc at time zone 'UTC')::date as day_utc,
       count(*)::bigint as row_count
-    from uk_aq_aqilevels.station_aqi_hourly h
+    from uk_aq_aqilevels.timeseries_aqi_hourly h
     group by 1
   ),
   aqilevels_days as (

@@ -82,6 +82,112 @@ drop function if exists uk_aq_public.uk_aq_rpc_station_aqi_hourly_source(
   timestamptz,
   bigint[]
 );
+create or replace function uk_aq_public.uk_aq_rpc_station_aqi_hourly_source(
+  p_window_start timestamptz,
+  p_window_end timestamptz,
+  p_station_ids bigint[] default null
+)
+returns table (
+  station_id bigint,
+  timestamp_hour_utc timestamptz,
+  pollutant_code text,
+  hourly_mean_ugm3 double precision,
+  sample_count integer
+)
+language plpgsql
+security definer
+set search_path = uk_aq_observs, uk_aq_core, public, pg_catalog
+as $$
+declare
+  v_window_start timestamptz;
+  v_window_end timestamptz;
+begin
+  if auth.role() <> 'service_role' then
+    raise exception 'service_role required';
+  end if;
+
+  if p_window_start is null or p_window_end is null then
+    raise exception 'p_window_start and p_window_end are required';
+  end if;
+
+  v_window_start := date_trunc('hour', p_window_start);
+  v_window_end := date_trunc('hour', p_window_end);
+
+  if v_window_end <= v_window_start then
+    raise exception 'p_window_end must be greater than p_window_start';
+  end if;
+
+  return query
+  with raw as (
+    select
+      ts.id as timeseries_id,
+      ts.station_id,
+      op.code as pollutant_code,
+      o.observed_at,
+      o.value
+    from uk_aq_observs.observations o
+    join uk_aq_core.timeseries ts
+      on ts.id = o.timeseries_id
+     and ts.connector_id = o.connector_id
+    join uk_aq_core.phenomena p
+      on p.id = ts.phenomenon_id
+    join uk_aq_core.observed_properties op
+      on op.id = p.observed_property_id
+    where o.observed_at >= v_window_start
+      and o.observed_at < v_window_end
+      and ts.station_id is not null
+      and op.code in ('pm25', 'pm10', 'no2')
+      and o.value is not null
+      and o.value >= 0
+      and (
+        p_station_ids is null
+        or ts.station_id = any(p_station_ids)
+      )
+  ),
+  hourly_by_timeseries as (
+    select
+      r.station_id,
+      r.timeseries_id,
+      r.pollutant_code,
+      date_trunc('hour', r.observed_at at time zone 'UTC') at time zone 'UTC' as timestamp_hour_utc,
+      avg(r.value)::double precision as hourly_mean_ugm3,
+      count(*)::int as sample_count
+    from raw r
+    group by
+      r.station_id,
+      r.timeseries_id,
+      r.pollutant_code,
+      date_trunc('hour', r.observed_at at time zone 'UTC') at time zone 'UTC'
+  ),
+  ranked as (
+    select
+      h.station_id,
+      h.timestamp_hour_utc,
+      h.pollutant_code,
+      h.hourly_mean_ugm3,
+      h.sample_count,
+      row_number() over (
+        partition by h.station_id, h.timestamp_hour_utc, h.pollutant_code
+        order by
+          h.sample_count desc,
+          h.timeseries_id asc
+      ) as rn
+    from hourly_by_timeseries h
+  )
+  select
+    r.station_id,
+    r.timestamp_hour_utc,
+    r.pollutant_code,
+    r.hourly_mean_ugm3,
+    r.sample_count
+  from ranked r
+  where r.rn = 1
+  order by
+    r.timestamp_hour_utc,
+    r.station_id,
+    r.pollutant_code;
+end;
+$$;
 
 drop function if exists uk_aq_public.uk_aq_rpc_observs_history_day_rows(
   date,
@@ -235,7 +341,7 @@ returns table (
 )
 language plpgsql
 security definer
-set search_path = uk_aq_aqilevels, public, pg_catalog
+set search_path = uk_aq_aqilevels, uk_aq_core, public, pg_catalog
 as $$
 declare
   v_start timestamptz;
@@ -254,19 +360,21 @@ begin
 
   return query
   select
-    h.connector_id::integer,
+    s.connector_id::integer,
     count(*)::bigint as row_count
-  from uk_aq_aqilevels.timeseries_aqi_hourly h
+  from uk_aq_aqilevels.station_aqi_hourly h
+  join uk_aq_core.stations s
+    on s.id = h.station_id
   where h.timestamp_hour_utc >= v_start
     and h.timestamp_hour_utc < v_end
-    and h.connector_id is not null
-    and h.connector_id > 0
+    and s.connector_id is not null
+    and s.connector_id > 0
     and (
       p_connector_ids is null
-      or h.connector_id = any(p_connector_ids)
+      or s.connector_id = any(p_connector_ids)
     )
-  group by h.connector_id
-  order by h.connector_id;
+  group by s.connector_id
+  order by s.connector_id;
 end;
 $$;
 
@@ -277,34 +385,24 @@ drop function if exists uk_aq_public.uk_aq_rpc_aqilevels_history_day_rows(
   timestamptz,
   integer
 );
-drop function if exists uk_aq_public.uk_aq_rpc_aqilevels_history_day_rows(
-  date,
-  integer,
-  integer,
-  timestamptz,
-  integer
-);
 create or replace function uk_aq_public.uk_aq_rpc_aqilevels_history_day_rows(
   p_day_utc date,
   p_connector_id integer,
-  p_after_timeseries_id integer default null,
+  p_after_station_id bigint default null,
   p_after_timestamp_hour_utc timestamptz default null,
   p_limit integer default 20000
 )
 returns table (
-  timeseries_id integer,
   station_id bigint,
-  connector_id integer,
-  pollutant_code text,
   timestamp_hour_utc timestamptz,
   no2_hourly_mean_ugm3 double precision,
   pm25_hourly_mean_ugm3 double precision,
   pm10_hourly_mean_ugm3 double precision,
   pm25_rolling24h_mean_ugm3 double precision,
   pm10_rolling24h_mean_ugm3 double precision,
-  hourly_sample_count smallint,
-  daqi_index_level smallint,
-  eaqi_index_level smallint,
+  no2_hourly_sample_count smallint,
+  pm25_hourly_sample_count smallint,
+  pm10_hourly_sample_count smallint,
   daqi_no2_index_level smallint,
   daqi_pm25_rolling24h_index_level smallint,
   daqi_pm10_rolling24h_index_level smallint,
@@ -314,7 +412,7 @@ returns table (
 )
 language plpgsql
 security definer
-set search_path = uk_aq_aqilevels, public, pg_catalog
+set search_path = uk_aq_aqilevels, uk_aq_core, public, pg_catalog
 as $$
 declare
   v_start timestamptz;
@@ -333,8 +431,8 @@ begin
     raise exception 'p_connector_id must be > 0';
   end if;
 
-  if (p_after_timeseries_id is null) <> (p_after_timestamp_hour_utc is null) then
-    raise exception 'p_after_timeseries_id and p_after_timestamp_hour_utc must both be null or both provided';
+  if (p_after_station_id is null) <> (p_after_timestamp_hour_utc is null) then
+    raise exception 'p_after_station_id and p_after_timestamp_hour_utc must both be null or both provided';
   end if;
 
   v_limit := greatest(1, least(coalesce(p_limit, 20000), 100000));
@@ -343,38 +441,34 @@ begin
 
   return query
   select
-    h.timeseries_id,
     h.station_id,
-    h.connector_id,
-    h.pollutant_code,
     h.timestamp_hour_utc,
     h.no2_hourly_mean_ugm3,
     h.pm25_hourly_mean_ugm3,
     h.pm10_hourly_mean_ugm3,
     h.pm25_rolling24h_mean_ugm3,
     h.pm10_rolling24h_mean_ugm3,
-    h.hourly_sample_count,
-    h.daqi_index_level,
-    h.eaqi_index_level,
+    h.no2_hourly_sample_count,
+    h.pm25_hourly_sample_count,
+    h.pm10_hourly_sample_count,
     h.daqi_no2_index_level,
     h.daqi_pm25_rolling24h_index_level,
     h.daqi_pm10_rolling24h_index_level,
     h.eaqi_no2_index_level,
     h.eaqi_pm25_index_level,
     h.eaqi_pm10_index_level
-  from uk_aq_aqilevels.timeseries_aqi_hourly h
-  where h.connector_id = p_connector_id
+  from uk_aq_aqilevels.station_aqi_hourly h
+  join uk_aq_core.stations s
+    on s.id = h.station_id
+  where s.connector_id = p_connector_id
     and h.timestamp_hour_utc >= v_start
     and h.timestamp_hour_utc < v_end
     and (
-      p_after_timeseries_id is null
-      or h.timeseries_id > p_after_timeseries_id
-      or (
-        h.timeseries_id = p_after_timeseries_id
-        and h.timestamp_hour_utc > p_after_timestamp_hour_utc
-      )
+      p_after_station_id is null
+      or h.station_id > p_after_station_id
+      or (h.station_id = p_after_station_id and h.timestamp_hour_utc > p_after_timestamp_hour_utc)
     )
-  order by h.timeseries_id asc, h.timestamp_hour_utc asc
+  order by h.station_id asc, h.timestamp_hour_utc asc
   limit v_limit;
 end;
 $$;
@@ -405,8 +499,8 @@ begin
       into v_oldest_observs;
   end if;
 
-  if to_regclass('uk_aq_aqilevels.timeseries_aqi_hourly') is not null then
-    execute 'select min(a.timestamp_hour_utc) from uk_aq_aqilevels.timeseries_aqi_hourly a'
+  if to_regclass('uk_aq_aqilevels.station_aqi_hourly') is not null then
+    execute 'select min(a.timestamp_hour_utc) from uk_aq_aqilevels.station_aqi_hourly a'
       into v_oldest_aqilevels;
   end if;
 
@@ -479,8 +573,8 @@ begin
         execute 'select min(o.observed_at) from uk_aq_observs.observations o'
           into v_oldest_observed_at;
       elsif v_schema = 'uk_aq_aqilevels'
-            and to_regclass('uk_aq_aqilevels.timeseries_aqi_hourly') is not null then
-        execute 'select min(a.timestamp_hour_utc) from uk_aq_aqilevels.timeseries_aqi_hourly a'
+            and to_regclass('uk_aq_aqilevels.station_aqi_hourly') is not null then
+        execute 'select min(a.timestamp_hour_utc) from uk_aq_aqilevels.station_aqi_hourly a'
           into v_oldest_observed_at;
       end if;
     end if;
@@ -1307,6 +1401,22 @@ revoke execute on function uk_aq_public.uk_aq_rpc_db_size_metric_cleanup(integer
 revoke execute on function uk_aq_public.uk_aq_rpc_db_size_metric_cleanup(integer) from anon, authenticated;
 grant execute on function uk_aq_public.uk_aq_rpc_db_size_metric_cleanup(integer) to service_role;
 
+revoke execute on function uk_aq_public.uk_aq_rpc_station_aqi_hourly_source(
+  timestamptz,
+  timestamptz,
+  bigint[]
+) from public;
+revoke execute on function uk_aq_public.uk_aq_rpc_station_aqi_hourly_source(
+  timestamptz,
+  timestamptz,
+  bigint[]
+) from anon, authenticated;
+grant execute on function uk_aq_public.uk_aq_rpc_station_aqi_hourly_source(
+  timestamptz,
+  timestamptz,
+  bigint[]
+) to service_role;
+
 revoke execute on function uk_aq_public.uk_aq_rpc_observs_history_day_rows(
   date,
   integer,
@@ -1370,21 +1480,21 @@ grant execute on function uk_aq_public.uk_aq_rpc_aqilevels_history_day_connector
 revoke execute on function uk_aq_public.uk_aq_rpc_aqilevels_history_day_rows(
   date,
   integer,
-  integer,
+  bigint,
   timestamptz,
   integer
 ) from public;
 revoke execute on function uk_aq_public.uk_aq_rpc_aqilevels_history_day_rows(
   date,
   integer,
-  integer,
+  bigint,
   timestamptz,
   integer
 ) from anon, authenticated;
 grant execute on function uk_aq_public.uk_aq_rpc_aqilevels_history_day_rows(
   date,
   integer,
-  integer,
+  bigint,
   timestamptz,
   integer
 ) to service_role;
@@ -1426,111 +1536,3 @@ revoke execute on function uk_aq_public.uk_aq_rpc_info_schema_primary_keys(text,
 grant execute on function uk_aq_public.uk_aq_rpc_info_schema_primary_keys(text, text[]) to service_role;
 
 grant usage on schema uk_aq_public to service_role;
-
--- Phase 1 additive: timeseries-first AQI source RPC.
-drop function if exists uk_aq_public.uk_aq_rpc_timeseries_aqi_hourly_source(
-  timestamptz,
-  timestamptz,
-  integer[]
-);
-
-create or replace function uk_aq_public.uk_aq_rpc_timeseries_aqi_hourly_source(
-  p_window_start timestamptz,
-  p_window_end timestamptz,
-  p_timeseries_ids integer[] default null
-)
-returns table (
-  timeseries_id integer,
-  station_id bigint,
-  connector_id integer,
-  pollutant_code text,
-  timestamp_hour_utc timestamptz,
-  hourly_mean_ugm3 double precision,
-  sample_count integer
-)
-language plpgsql
-security definer
-set search_path = uk_aq_observs, uk_aq_core, public, pg_catalog
-as $$
-declare
-  v_window_start timestamptz;
-  v_window_end timestamptz;
-begin
-  if auth.role() <> 'service_role' then
-    raise exception 'service_role required';
-  end if;
-
-  if p_window_start is null or p_window_end is null then
-    raise exception 'p_window_start and p_window_end are required';
-  end if;
-
-  v_window_start := date_trunc('hour', p_window_start);
-  v_window_end := date_trunc('hour', p_window_end);
-
-  if v_window_end <= v_window_start then
-    raise exception 'p_window_end must be greater than p_window_start';
-  end if;
-
-  return query
-  with raw as (
-    select
-      ts.id::integer as timeseries_id,
-      ts.station_id,
-      ts.connector_id,
-      op.code as pollutant_code,
-      o.observed_at,
-      o.value
-    from uk_aq_observs.observations o
-    join uk_aq_core.timeseries ts
-      on ts.id = o.timeseries_id
-     and ts.connector_id = o.connector_id
-    join uk_aq_core.phenomena p
-      on p.id = ts.phenomenon_id
-    join uk_aq_core.observed_properties op
-      on op.id = p.observed_property_id
-    where o.observed_at >= v_window_start
-      and o.observed_at < v_window_end
-      and op.code in ('pm25', 'pm10', 'no2')
-      and o.value is not null
-      and o.value >= 0
-      and (
-        p_timeseries_ids is null
-        or ts.id = any(p_timeseries_ids)
-      )
-  )
-  select
-    r.timeseries_id,
-    r.station_id,
-    r.connector_id,
-    r.pollutant_code,
-    date_trunc('hour', r.observed_at at time zone 'UTC') at time zone 'UTC' as timestamp_hour_utc,
-    avg(r.value)::double precision as hourly_mean_ugm3,
-    count(*)::int as sample_count
-  from raw r
-  group by
-    r.timeseries_id,
-    r.station_id,
-    r.connector_id,
-    r.pollutant_code,
-    date_trunc('hour', r.observed_at at time zone 'UTC') at time zone 'UTC'
-  order by
-    timestamp_hour_utc,
-    r.timeseries_id;
-end;
-$$;
-
-revoke execute on function uk_aq_public.uk_aq_rpc_timeseries_aqi_hourly_source(
-  timestamptz,
-  timestamptz,
-  integer[]
-) from public;
-revoke execute on function uk_aq_public.uk_aq_rpc_timeseries_aqi_hourly_source(
-  timestamptz,
-  timestamptz,
-  integer[]
-) from anon, authenticated;
-grant execute on function uk_aq_public.uk_aq_rpc_timeseries_aqi_hourly_source(
-  timestamptz,
-  timestamptz,
-  integer[]
-) to service_role;

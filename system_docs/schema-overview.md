@@ -90,16 +90,16 @@ This document summarizes the schema defined in `schemas/uk_air_quality_schema.sq
 - Reference tables:
   - `aqi_standard_versions`: DAQI/EAQI version registry with validity dates.
   - `aqi_breakpoints`: range-based pollutant thresholds by standard/version/averaging metric.
-- Station outputs:
-  - `station_aqi_hourly`: station-hour concentrations, hourly sample counts, rolling 24h PM means, and pollutant-specific DAQI/EAQI `index_level` fields.
-  - `station_aqi_daily`: per-day level distributions (`index_level_hour_counts`) by station, AQI standard, and pollutant.
-  - `station_aqi_monthly`: monthly level distributions by station, AQI standard, and pollutant.
+- Timeseries outputs:
+  - `timeseries_aqi_hourly`: timeseries-hour concentrations, hourly sample counts, rolling 24h PM means, and pollutant-specific DAQI/EAQI `index_level` fields.
+  - `timeseries_aqi_daily`: per-day level distributions (`index_level_hour_counts`) by timeseries, AQI standard, and pollutant.
+  - `timeseries_aqi_monthly`: monthly level distributions by timeseries, AQI standard, and pollutant.
 - Ops telemetry:
   - `uk_aq_ops.aqi_compute_runs`: run-mode/window/change metrics for AQI sync jobs (currently `sync_hourly` and `backfill`; legacy run-mode values may remain historically).
 - AQI runtime RPCs in `uk_aq_public` (service-role):
   - `uk_aq_rpc_aqi_breakpoints_active`
-  - `uk_aq_rpc_station_aqi_hourly_upsert`
-  - `uk_aq_rpc_station_aqi_rollups_refresh`
+  - `uk_aq_rpc_timeseries_aqi_hourly_upsert`
+  - `uk_aq_rpc_timeseries_aqi_rollups_refresh`
   - `uk_aq_rpc_aqi_compute_run_log`
   - `uk_aq_rpc_aqi_compute_runs_cleanup`
 
