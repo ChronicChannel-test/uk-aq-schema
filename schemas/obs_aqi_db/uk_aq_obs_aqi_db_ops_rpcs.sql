@@ -297,20 +297,11 @@ returns table (
   connector_id integer,
   pollutant_code text,
   timestamp_hour_utc timestamptz,
-  no2_hourly_mean_ugm3 double precision,
-  pm25_hourly_mean_ugm3 double precision,
-  pm10_hourly_mean_ugm3 double precision,
-  pm25_rolling24h_mean_ugm3 double precision,
-  pm10_rolling24h_mean_ugm3 double precision,
+  hourly_mean_ugm3 double precision,
+  rolling24h_mean_ugm3 double precision,
   hourly_sample_count smallint,
   daqi_index_level smallint,
-  eaqi_index_level smallint,
-  daqi_no2_index_level smallint,
-  daqi_pm25_rolling24h_index_level smallint,
-  daqi_pm10_rolling24h_index_level smallint,
-  eaqi_no2_index_level smallint,
-  eaqi_pm25_index_level smallint,
-  eaqi_pm10_index_level smallint
+  eaqi_index_level smallint
 )
 language plpgsql
 security definer
@@ -348,20 +339,11 @@ begin
     h.connector_id,
     h.pollutant_code,
     h.timestamp_hour_utc,
-    h.no2_hourly_mean_ugm3,
-    h.pm25_hourly_mean_ugm3,
-    h.pm10_hourly_mean_ugm3,
-    h.pm25_rolling24h_mean_ugm3,
-    h.pm10_rolling24h_mean_ugm3,
+    h.hourly_mean_ugm3,
+    h.rolling24h_mean_ugm3,
     h.hourly_sample_count,
     h.daqi_index_level,
-    h.eaqi_index_level,
-    h.daqi_no2_index_level,
-    h.daqi_pm25_rolling24h_index_level,
-    h.daqi_pm10_rolling24h_index_level,
-    h.eaqi_no2_index_level,
-    h.eaqi_pm25_index_level,
-    h.eaqi_pm10_index_level
+    h.eaqi_index_level
   from uk_aq_aqilevels.timeseries_aqi_hourly h
   where h.connector_id = p_connector_id
     and h.timestamp_hour_utc >= v_start
