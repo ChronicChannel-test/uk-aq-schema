@@ -157,7 +157,7 @@ drop function if exists uk_aq_ops.uk_aq_timeseries_aqi_hourly_ingest_tick(
 create or replace function uk_aq_ops.uk_aq_timeseries_aqi_hourly_ingest_tick(
   p_now_utc timestamptz default now(),
   p_timeseries_ids integer[] default null,
-  p_helper_retention_days integer default 45
+  p_helper_retention_days integer default 21
 )
 returns table (
   target_hour_end_utc timestamptz,
@@ -218,11 +218,6 @@ begin
     coalesce(v_helper_rows_deleted, 0);
 end;
 $$;
-
--- Remove legacy station helper tick job if present.
-select cron.unschedule(jobid)
-from cron.job
-where jobname = 'uk_aq_ingest_station_aqi_hourly_helper_tick';
 
 -- Ensure only the timeseries helper tick schedule is present.
 select cron.unschedule(jobid)

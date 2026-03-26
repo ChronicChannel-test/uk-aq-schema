@@ -337,6 +337,3 @@ end
 $$;
 
 grant all on table uk_aq_aqilevels.timeseries_aqi_hourly_helper to service_role;
-
--- Phase 2 hard cut: remove legacy station-focused helper artifact.
-drop table if exists uk_aq_aqilevels.station_aqi_hourly_helper;

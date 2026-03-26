@@ -2923,7 +2923,7 @@ $$;
 drop function if exists uk_aq_public.uk_aq_rpc_timeseries_aqi_hourly_helper_cleanup(integer);
 
 create or replace function uk_aq_public.uk_aq_rpc_timeseries_aqi_hourly_helper_cleanup(
-  p_retention_days integer default 45
+  p_retention_days integer default 21
 )
 returns table (
   rows_deleted bigint
@@ -2940,7 +2940,7 @@ begin
     raise exception 'service_role required';
   end if;
 
-  v_days := greatest(1, least(coalesce(p_retention_days, 45), 3650));
+  v_days := greatest(1, least(coalesce(p_retention_days, 21), 3650));
 
   delete from uk_aq_aqilevels.timeseries_aqi_hourly_helper
   where timestamp_hour_utc < date_trunc('hour', now()) - make_interval(days => v_days);
@@ -3020,15 +3020,3 @@ drop function if exists uk_aq_public.uk_aq_rpc_station_aqi_hourly_source(
   timestamptz,
   bigint[]
 );
-drop function if exists uk_aq_public.uk_aq_rpc_station_aqi_hourly_helper_upsert(
-  timestamptz,
-  timestamptz,
-  bigint[],
-  timestamptz
-);
-drop function if exists uk_aq_public.uk_aq_rpc_station_aqi_hourly_helper_window(
-  timestamptz,
-  timestamptz,
-  bigint[]
-);
-drop function if exists uk_aq_public.uk_aq_rpc_station_aqi_hourly_helper_cleanup(integer);
