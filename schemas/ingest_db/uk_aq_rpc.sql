@@ -2090,6 +2090,8 @@ begin
         'uk_aq_rpc_database_size_bytes',
         'uk_aq_rpc_db_size_metric_upsert',
         'uk_aq_rpc_db_size_metric_cleanup',
+        'uk_aq_rpc_observation_rpc_metrics_cleanup',
+        'uk_aq_rpc_ingest_runs_cleanup',
         'uk_aq_rpc_schema_size_metric_upsert',
         'uk_aq_rpc_schema_size_metric_cleanup',
         'uk_aq_rpc_r2_domain_size_metric_upsert',
@@ -2224,6 +2226,58 @@ begin
 
   delete from uk_aq_ops.db_size_metrics_hourly
   where bucket_hour < now() - make_interval(days => v_days);
+
+  get diagnostics v_rows = row_count;
+  return query select v_rows;
+end;
+$$;
+
+create or replace function uk_aq_public.uk_aq_rpc_observation_rpc_metrics_cleanup(
+  p_retention_days integer default 30
+)
+returns table (rows_deleted bigint)
+language plpgsql
+security definer
+set search_path = uk_aq_raw, public, pg_catalog
+as $$
+declare
+  v_days integer;
+  v_rows bigint := 0;
+begin
+  if auth.role() is not null and auth.role() <> 'service_role' then
+    raise exception 'service_role required';
+  end if;
+
+  v_days := greatest(1, least(coalesce(p_retention_days, 30), 3650));
+
+  delete from uk_aq_raw.observation_rpc_metrics_minute
+  where bucket_minute < date_trunc('minute', now()) - make_interval(days => v_days);
+
+  get diagnostics v_rows = row_count;
+  return query select v_rows;
+end;
+$$;
+
+create or replace function uk_aq_public.uk_aq_rpc_ingest_runs_cleanup(
+  p_retention_days integer default 30
+)
+returns table (rows_deleted bigint)
+language plpgsql
+security definer
+set search_path = uk_aq_core, public, pg_catalog
+as $$
+declare
+  v_days integer;
+  v_rows bigint := 0;
+begin
+  if auth.role() is not null and auth.role() <> 'service_role' then
+    raise exception 'service_role required';
+  end if;
+
+  v_days := greatest(1, least(coalesce(p_retention_days, 30), 3650));
+
+  delete from uk_aq_core.uk_aq_ingest_runs
+  where created_at < date_trunc('minute', now()) - make_interval(days => v_days);
 
   get diagnostics v_rows = row_count;
   return query select v_rows;
@@ -2409,6 +2463,12 @@ grant execute on function uk_aq_public.uk_aq_rpc_db_size_metric_upsert(
 
 revoke all on function uk_aq_public.uk_aq_rpc_db_size_metric_cleanup(integer) from public;
 grant execute on function uk_aq_public.uk_aq_rpc_db_size_metric_cleanup(integer) to service_role;
+
+revoke all on function uk_aq_public.uk_aq_rpc_observation_rpc_metrics_cleanup(integer) from public;
+grant execute on function uk_aq_public.uk_aq_rpc_observation_rpc_metrics_cleanup(integer) to service_role;
+
+revoke all on function uk_aq_public.uk_aq_rpc_ingest_runs_cleanup(integer) from public;
+grant execute on function uk_aq_public.uk_aq_rpc_ingest_runs_cleanup(integer) to service_role;
 
 revoke all on function uk_aq_public.uk_aq_rpc_r2_domain_size_metric_upsert(
   text,
@@ -2923,7 +2983,7 @@ $$;
 drop function if exists uk_aq_public.uk_aq_rpc_timeseries_aqi_hourly_helper_cleanup(integer);
 
 create or replace function uk_aq_public.uk_aq_rpc_timeseries_aqi_hourly_helper_cleanup(
-  p_retention_days integer default 21
+  p_retention_days integer default 14
 )
 returns table (
   rows_deleted bigint
@@ -2940,7 +3000,7 @@ begin
     raise exception 'service_role required';
   end if;
 
-  v_days := greatest(1, least(coalesce(p_retention_days, 21), 3650));
+  v_days := greatest(1, least(coalesce(p_retention_days, 14), 3650));
 
   delete from uk_aq_aqilevels.timeseries_aqi_hourly_helper
   where timestamp_hour_utc < date_trunc('hour', now()) - make_interval(days => v_days);

@@ -132,6 +132,48 @@ select cron.schedule(
   $$select * from uk_aq_ops.uk_aq_db_size_metric_sample_local();$$
 );
 
+drop function if exists uk_aq_ops.uk_aq_ingest_runtime_metrics_cleanup_tick(integer);
+
+create or replace function uk_aq_ops.uk_aq_ingest_runtime_metrics_cleanup_tick(
+  p_retention_days integer default 30
+)
+returns table (
+  observation_rpc_metrics_rows_deleted bigint,
+  ingest_runs_rows_deleted bigint
+)
+language plpgsql
+security definer
+set search_path = uk_aq_ops, uk_aq_public, public, pg_catalog
+as $$
+declare
+  v_observation_rpc_metrics_rows_deleted bigint := 0;
+  v_ingest_runs_rows_deleted bigint := 0;
+begin
+  select c.rows_deleted
+  into v_observation_rpc_metrics_rows_deleted
+  from uk_aq_public.uk_aq_rpc_observation_rpc_metrics_cleanup(p_retention_days) c;
+
+  select c.rows_deleted
+  into v_ingest_runs_rows_deleted
+  from uk_aq_public.uk_aq_rpc_ingest_runs_cleanup(p_retention_days) c;
+
+  return query
+  select
+    coalesce(v_observation_rpc_metrics_rows_deleted, 0),
+    coalesce(v_ingest_runs_rows_deleted, 0);
+end;
+$$;
+
+select cron.unschedule(jobid)
+from cron.job
+where jobname = 'uk_aq_ingest_runtime_metrics_cleanup_daily';
+
+select cron.schedule(
+  'uk_aq_ingest_runtime_metrics_cleanup_daily',
+  '35 3 * * *',
+  $$select * from uk_aq_ops.uk_aq_ingest_runtime_metrics_cleanup_tick(30);$$
+);
+
 drop function if exists uk_aq_ops.uk_aq_station_aqi_hourly_ingest_tick(
   timestamptz,
   bigint[],
@@ -157,7 +199,7 @@ drop function if exists uk_aq_ops.uk_aq_timeseries_aqi_hourly_ingest_tick(
 create or replace function uk_aq_ops.uk_aq_timeseries_aqi_hourly_ingest_tick(
   p_now_utc timestamptz default now(),
   p_timeseries_ids integer[] default null,
-  p_helper_retention_days integer default 21
+  p_helper_retention_days integer default 14
 )
 returns table (
   target_hour_end_utc timestamptz,
@@ -236,6 +278,9 @@ grant all on table uk_aq_ops.r2_domain_size_metrics_hourly to service_role;
 
 revoke all on function uk_aq_ops.uk_aq_db_size_metric_sample_local(integer, timestamptz, text) from public;
 grant execute on function uk_aq_ops.uk_aq_db_size_metric_sample_local(integer, timestamptz, text) to service_role;
+
+revoke all on function uk_aq_ops.uk_aq_ingest_runtime_metrics_cleanup_tick(integer) from public;
+grant execute on function uk_aq_ops.uk_aq_ingest_runtime_metrics_cleanup_tick(integer) to service_role;
 
 revoke all on function uk_aq_ops.uk_aq_timeseries_aqi_hourly_ingest_tick(
   timestamptz,
