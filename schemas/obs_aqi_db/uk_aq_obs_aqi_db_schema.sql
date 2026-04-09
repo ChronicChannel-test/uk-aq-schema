@@ -246,6 +246,9 @@ create table if not exists timeseries (
   extras jsonb,
   rendering_hints jsonb,
   status_intervals jsonb,
+  last_catalog_seen_at timestamptz,
+  catalog_missing_runs integer not null default 0,
+  ended_at timestamptz,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
@@ -253,9 +256,22 @@ create table if not exists timeseries (
 alter table if exists timeseries
   add column if not exists updated_at timestamptz default now();
 
+alter table if exists timeseries
+  add column if not exists last_catalog_seen_at timestamptz;
+
+alter table if exists timeseries
+  add column if not exists catalog_missing_runs integer not null default 0;
+
+alter table if exists timeseries
+  add column if not exists ended_at timestamptz;
+
 update timeseries
 set updated_at = coalesce(updated_at, last_value_at, created_at, now())
 where updated_at is null;
+
+update timeseries
+set catalog_missing_runs = 0
+where catalog_missing_runs is null;
 
 create unique index if not exists timeseries_connector_ref_uidx
   on timeseries(connector_id, service_ref, timeseries_ref);
@@ -263,6 +279,7 @@ create index if not exists timeseries_station_idx on timeseries(station_id);
 create index if not exists timeseries_phenomenon_idx on timeseries(phenomenon_id);
 create index if not exists timeseries_phenomenon_station_idx on timeseries(phenomenon_id, station_id);
 create index if not exists timeseries_updated_cursor_idx on timeseries(updated_at, id);
+create index if not exists timeseries_connector_ended_idx on timeseries(connector_id, ended_at);
 
 create or replace function uk_aq_touch_timeseries_updated_at()
 returns trigger

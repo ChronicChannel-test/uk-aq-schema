@@ -141,6 +141,9 @@ select
   first_value_at,
   last_value_at,
   last_value,
+  last_catalog_seen_at,
+  catalog_missing_runs,
+  ended_at,
   rendering_hints,
   status_intervals,
   created_at
