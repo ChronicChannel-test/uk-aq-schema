@@ -94,10 +94,7 @@ begin
     v_bucket_hour,
     'ingestdb',
     current_database()::text,
-    (
-      select coalesce(sum(pg_database_size(pg_database.datname)), 0)::bigint
-      from pg_database
-    ),
+    pg_database_size(current_database())::bigint,
     (select min(o.observed_at) from uk_aq_core.observations o),
     v_source,
     coalesce(p_recorded_at, now()),

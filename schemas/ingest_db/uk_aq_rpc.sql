@@ -2127,10 +2127,7 @@ begin
   return query
   select
     current_database()::text as database_name,
-    (
-      select coalesce(sum(pg_database_size(pg_database.datname)), 0)::bigint
-      from pg_database
-    ) as size_bytes,
+    pg_database_size(current_database())::bigint as size_bytes,
     (select min(o.observed_at) from uk_aq_core.observations o) as oldest_observed_at,
     now() as sampled_at;
 end;

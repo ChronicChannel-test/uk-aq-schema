@@ -989,10 +989,7 @@ begin
     v_bucket_hour,
     'obs_aqidb',
     current_database()::text,
-	(
-	    select coalesce(sum(pg_database_size(pg_database.datname)), 0)::bigint
-	    from pg_database
-	    ),
+    pg_database_size(current_database())::bigint,
     v_oldest_observed_at,
     v_source,
     coalesce(p_recorded_at, now()),
@@ -1369,10 +1366,7 @@ begin
   return query
   select
     current_database()::text as database_name,
-    (
-      select coalesce(sum(pg_database_size(pg_database.datname)), 0)::bigint
-      from pg_database
-    ) as size_bytes,
+    pg_database_size(current_database())::bigint as size_bytes,
     v_oldest_observed_at as oldest_observed_at,
     now() as sampled_at;
 end;
