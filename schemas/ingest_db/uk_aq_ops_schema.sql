@@ -171,6 +171,25 @@ select cron.schedule(
   $$select * from uk_aq_ops.uk_aq_ingest_runtime_metrics_cleanup_tick(30);$$
 );
 
+-- Shared ingest DB full-database vacuum at 05:00 UTC.
+select cron.unschedule(jobid)
+from cron.job
+where jobname in (
+  'uk_aq_ingest_observations_vacuum_full_0500_utc',
+  'uk_aq_ingestdb_observations_vacuum_full_0500_utc',
+  'uk_aq_ingestdb_vacuum_full_0500_utc'
+)
+or (
+  schedule = '0 5 * * *'
+  and lower(command) like '%vacuum (full, analyze, verbose)%uk_aq_core.observations%'
+);
+
+select cron.schedule(
+  'uk_aq_ingestdb_vacuum_full_0500_utc',
+  '0 5 * * *',
+  $$vacuum (full, analyze, verbose);$$
+);
+
 drop function if exists uk_aq_ops.uk_aq_station_aqi_hourly_ingest_tick(
   timestamptz,
   bigint[],
