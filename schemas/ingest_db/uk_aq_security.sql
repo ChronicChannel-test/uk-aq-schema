@@ -70,6 +70,13 @@ alter default privileges in schema uk_aq_core
 alter default privileges in schema uk_aq_core
   grant execute on functions to service_role;
 
+-- Schema USAGE for anon/authenticated: required for PostgREST to build its schema cache
+-- even though RLS policies block their access to individual tables.
+grant usage on schema uk_aq_core to anon, authenticated;
+grant select on all tables in schema uk_aq_core to authenticated;
+alter default privileges in schema uk_aq_core
+  grant select on tables to authenticated;
+
 grant usage on schema uk_aq_raw to service_role;
 grant all on all tables in schema uk_aq_raw to service_role;
 grant all on all sequences in schema uk_aq_raw to service_role;
@@ -81,6 +88,8 @@ alter default privileges in schema uk_aq_raw
   grant all on sequences to service_role;
 alter default privileges in schema uk_aq_raw
   grant execute on functions to service_role;
+
+grant usage on schema uk_aq_raw to anon, authenticated;
 
 grant usage on schema uk_aq_pop to service_role;
 grant all on all tables in schema uk_aq_pop to service_role;

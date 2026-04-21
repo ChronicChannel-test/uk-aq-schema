@@ -1,4 +1,36 @@
-# Schema Migrations (obs_aqidb refactor)
+# Schema Migrations
+
+## Naming Convention (from v1.0.0 onwards)
+
+New migration files must be named:
+
+```
+YYYYMMDD_NNN_short_description.sql
+```
+
+- `YYYYMMDD` — date authored
+- `NNN` — three-digit sequence for same-day ordering (001, 002, …)
+- Description should indicate target DB — prefix with `ingest_` or `obs_aqidb_`
+
+Each file should start with a header comment:
+```sql
+-- Target: ingestdb | obs_aqidb | both
+-- Description: brief summary
+```
+
+This convention is required for the Mode 2 (Sync Update) deploy procedure. See `CIC-test-uk-aq-ops/plans/deploy_to_live.md`.
+
+---
+
+## 2026-03-13 Migrations
+
+- `2026-03-13_obs_aqidb_day_counts_current.sql`
+  - apply to `obs_aqidb`
+  - updates day-counts query to use `current_database()` for correct per-DB scoping
+
+---
+
+## 2026-03-08 Migrations (obs_aqidb refactor)
 
 Date: 2026-03-08
 

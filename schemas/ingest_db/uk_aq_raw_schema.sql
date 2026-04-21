@@ -206,3 +206,49 @@ create index if not exists error_logs_source_idx on error_logs(source);
 create index if not exists error_logs_connector_idx on error_logs(connector_id);
 
 -- PM2.5 Population Exposure Indicator progress (PERT)
+
+-- RLS policies for uk_aq_raw tables.
+do $$
+declare
+  t text;
+begin
+  for t in
+    select unnest(ARRAY['uk_air_sos_site_register','laqn_site_register','uk_air_sos_station_refs','breathelondon_station_checkpoints','erg_laqn_station_checkpoints','uk_air_sos_timeseries_checkpoints','uk_air_sos_station_checkpoints','openaq_station_checkpoints','openaq_timeseries_checkpoints','observation_rpc_metrics_minute','error_logs']::text[])
+  loop
+    execute format('alter table uk_aq_raw.%I enable row level security', t);
+    if not exists (
+      select 1 from pg_policies p
+      where p.schemaname = 'uk_aq_raw' and p.tablename = t and p.policyname = t || '_select_service_role'
+    ) then
+      execute format(
+        'create policy %I on uk_aq_raw.%I for select using (auth.role() = ''service_role'');',
+        t || '_select_service_role', t
+      );
+    end if;
+    if not exists (
+      select 1 from pg_policies p
+      where p.schemaname = 'uk_aq_raw' and p.tablename = t and p.policyname = t || '_write_service_role'
+    ) then
+      execute format(
+        'create policy %I on uk_aq_raw.%I for all using (auth.role() = ''service_role'') with check (auth.role() = ''service_role'');',
+        t || '_write_service_role', t
+      );
+    end if;
+  end loop;
+end $$;
+
+-- Service role privileges (required for PostgREST access to non-public schemas).
+grant usage on schema uk_aq_raw to service_role;
+grant all on all tables in schema uk_aq_raw to service_role;
+grant all on all sequences in schema uk_aq_raw to service_role;
+grant execute on all functions in schema uk_aq_raw to service_role;
+
+alter default privileges in schema uk_aq_raw
+  grant all on tables to service_role;
+alter default privileges in schema uk_aq_raw
+  grant all on sequences to service_role;
+alter default privileges in schema uk_aq_raw
+  grant execute on functions to service_role;
+
+-- Schema USAGE for PostgREST schema cache (tables remain protected by RLS).
+grant usage on schema uk_aq_raw to anon, authenticated;
