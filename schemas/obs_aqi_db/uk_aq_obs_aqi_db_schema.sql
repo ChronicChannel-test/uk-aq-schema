@@ -246,24 +246,12 @@ create table if not exists timeseries (
   extras jsonb,
   rendering_hints jsonb,
   status_intervals jsonb,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
   last_catalog_seen_at timestamptz,
   catalog_missing_runs integer not null default 0,
-  ended_at timestamptz,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
+  ended_at timestamptz
 );
-
-alter table if exists timeseries
-  add column if not exists updated_at timestamptz default now();
-
-alter table if exists timeseries
-  add column if not exists last_catalog_seen_at timestamptz;
-
-alter table if exists timeseries
-  add column if not exists catalog_missing_runs integer not null default 0;
-
-alter table if exists timeseries
-  add column if not exists ended_at timestamptz;
 
 update timeseries
 set updated_at = coalesce(updated_at, last_value_at, created_at, now())
