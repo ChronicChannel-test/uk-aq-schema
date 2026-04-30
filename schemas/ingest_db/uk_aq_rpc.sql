@@ -1489,9 +1489,9 @@ begin
 
   perform pg_advisory_xact_lock(hashtextextended(v_budget_key, 0));
 
-  delete from uk_aq_raw.openaq_request_budget_minute
-  where budget_key = v_budget_key
-    and bucket_minute < v_now - interval '2 hours';
+  delete from uk_aq_raw.openaq_request_budget_minute as m
+  where m.budget_key = v_budget_key
+    and m.bucket_minute < v_now - interval '2 hours';
 
   select coalesce(m.used_tokens, 0)
   into v_minute_used_before
@@ -1530,7 +1530,7 @@ begin
       v_caller,
       v_now
     )
-    on conflict (budget_key, bucket_minute) do update
+    on conflict on constraint openaq_request_budget_minute_pkey do update
     set used_tokens = uk_aq_raw.openaq_request_budget_minute.used_tokens + excluded.used_tokens,
         last_caller = excluded.last_caller,
         updated_at = excluded.updated_at;
