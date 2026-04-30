@@ -1042,6 +1042,7 @@ begin
         'uk_aq_rpc_openaq_timeseries_checkpoints_select',
         'uk_aq_rpc_openaq_timeseries_checkpoints_upsert',
         'uk_aq_rpc_openaq_select_station_refs',
+        'uk_aq_rpc_openaq_token_budget_reserve',
         'uk_aq_rpc_dispatch_claim',
         'uk_aq_rpc_latest_ingest_runs',
         'uk_aq_rpc_stations_upsert',
@@ -1428,6 +1429,178 @@ begin
     max(updated.last_run_start) as last_run_start,
     max(updated.last_run_end) as last_run_end
   from updated;
+end;
+$$;
+
+create or replace function uk_aq_public.uk_aq_rpc_openaq_token_budget_reserve(
+  p_budget_key text default 'openaq_default',
+  p_tokens integer default 1,
+  p_minute_limit integer default 50,
+  p_hour_limit integer default 1500,
+  p_caller text default null
+)
+returns table (
+  granted boolean,
+  reason text,
+  budget_key text,
+  caller text,
+  requested_tokens integer,
+  minute_bucket timestamptz,
+  minute_limit integer,
+  minute_used_before integer,
+  minute_used_after integer,
+  minute_remaining integer,
+  minute_reset_at timestamptz,
+  hour_window_start timestamptz,
+  hour_limit integer,
+  hour_used_before integer,
+  hour_used_after integer,
+  hour_remaining integer,
+  hour_reset_at timestamptz,
+  retry_after_seconds integer
+)
+language plpgsql
+security definer
+set search_path = uk_aq_raw, uk_aq_core, public, pg_catalog
+as $$
+declare
+  v_budget_key text := coalesce(nullif(btrim(p_budget_key), ''), 'openaq_default');
+  v_caller text := coalesce(nullif(btrim(p_caller), ''), 'unknown');
+  v_tokens integer := greatest(0, coalesce(p_tokens, 0));
+  v_minute_limit integer := greatest(1, coalesce(p_minute_limit, 50));
+  v_hour_limit integer := greatest(1, coalesce(p_hour_limit, 1500));
+  v_now timestamptz := now();
+  v_minute_bucket timestamptz := date_trunc('minute', v_now);
+  v_hour_window_start timestamptz := v_now - interval '1 hour';
+  v_minute_used_before integer := 0;
+  v_hour_used_before integer := 0;
+  v_minute_used_after integer := 0;
+  v_hour_used_after integer := 0;
+  v_minute_remaining integer := 0;
+  v_hour_remaining integer := 0;
+  v_hour_reset_at timestamptz := date_trunc('minute', v_now) + interval '1 minute';
+  v_retry_after_seconds integer := 0;
+  v_reason text := 'granted';
+  v_granted boolean := false;
+begin
+  if auth.role() is not null and auth.role() <> 'service_role' then
+    raise exception 'service_role required';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtextextended(v_budget_key, 0));
+
+  delete from uk_aq_raw.openaq_request_budget_minute
+  where budget_key = v_budget_key
+    and bucket_minute < v_now - interval '2 hours';
+
+  select coalesce(m.used_tokens, 0)
+  into v_minute_used_before
+  from uk_aq_raw.openaq_request_budget_minute m
+  where m.budget_key = v_budget_key
+    and m.bucket_minute = v_minute_bucket;
+
+  select coalesce(sum(m.used_tokens), 0)
+  into v_hour_used_before
+  from uk_aq_raw.openaq_request_budget_minute m
+  where m.budget_key = v_budget_key
+    and m.bucket_minute > v_hour_window_start
+    and m.bucket_minute <= v_now;
+
+  if v_tokens = 0 then
+    v_granted := true;
+    v_reason := 'snapshot';
+  elsif v_minute_used_before + v_tokens > v_minute_limit then
+    v_granted := false;
+    v_reason := 'minute_limit';
+  elsif v_hour_used_before + v_tokens > v_hour_limit then
+    v_granted := false;
+    v_reason := 'hour_limit';
+  else
+    insert into uk_aq_raw.openaq_request_budget_minute (
+      budget_key,
+      bucket_minute,
+      used_tokens,
+      last_caller,
+      updated_at
+    )
+    values (
+      v_budget_key,
+      v_minute_bucket,
+      v_tokens,
+      v_caller,
+      v_now
+    )
+    on conflict (budget_key, bucket_minute) do update
+    set used_tokens = uk_aq_raw.openaq_request_budget_minute.used_tokens + excluded.used_tokens,
+        last_caller = excluded.last_caller,
+        updated_at = excluded.updated_at;
+
+    v_granted := true;
+    v_reason := 'granted';
+  end if;
+
+  select coalesce(m.used_tokens, 0)
+  into v_minute_used_after
+  from uk_aq_raw.openaq_request_budget_minute m
+  where m.budget_key = v_budget_key
+    and m.bucket_minute = v_minute_bucket;
+
+  select coalesce(sum(m.used_tokens), 0)
+  into v_hour_used_after
+  from uk_aq_raw.openaq_request_budget_minute m
+  where m.budget_key = v_budget_key
+    and m.bucket_minute > v_hour_window_start
+    and m.bucket_minute <= now();
+
+  v_minute_remaining := greatest(0, v_minute_limit - v_minute_used_after);
+  v_hour_remaining := greatest(0, v_hour_limit - v_hour_used_after);
+
+  if not v_granted then
+    select min(m.bucket_minute + interval '1 hour')
+    into v_hour_reset_at
+    from uk_aq_raw.openaq_request_budget_minute m
+    where m.budget_key = v_budget_key
+      and m.bucket_minute > v_hour_window_start
+      and m.bucket_minute <= v_now;
+    if v_hour_reset_at is null then
+      v_hour_reset_at := date_trunc('minute', v_now) + interval '1 minute';
+    end if;
+
+    if v_reason = 'minute_limit' then
+      v_retry_after_seconds := greatest(
+        1,
+        ceil(extract(epoch from ((v_minute_bucket + interval '1 minute') - v_now)))::integer
+      );
+    elsif v_reason = 'hour_limit' then
+      v_retry_after_seconds := greatest(
+        1,
+        ceil(extract(epoch from (v_hour_reset_at - v_now)))::integer
+      );
+    else
+      v_retry_after_seconds := 1;
+    end if;
+  end if;
+
+  return query
+  select
+    v_granted,
+    v_reason,
+    v_budget_key,
+    v_caller,
+    v_tokens,
+    v_minute_bucket,
+    v_minute_limit,
+    v_minute_used_before,
+    v_minute_used_after,
+    v_minute_remaining,
+    v_minute_bucket + interval '1 minute',
+    v_hour_window_start,
+    v_hour_limit,
+    v_hour_used_before,
+    v_hour_used_after,
+    v_hour_remaining,
+    v_hour_reset_at,
+    v_retry_after_seconds;
 end;
 $$;
 
@@ -2029,6 +2202,9 @@ grant execute on function uk_aq_public.uk_aq_rpc_openaq_timeseries_checkpoints_u
 
 revoke all on function uk_aq_public.uk_aq_rpc_openaq_select_station_refs(integer, integer, integer) from public;
 grant execute on function uk_aq_public.uk_aq_rpc_openaq_select_station_refs(integer, integer, integer) to service_role;
+
+revoke all on function uk_aq_public.uk_aq_rpc_openaq_token_budget_reserve(text, integer, integer, integer, text) from public;
+grant execute on function uk_aq_public.uk_aq_rpc_openaq_token_budget_reserve(text, integer, integer, integer, text) to service_role;
 
 revoke all on function uk_aq_public.uk_aq_rpc_dispatch_claim(text, timestamptz, integer) from public;
 grant execute on function uk_aq_public.uk_aq_rpc_dispatch_claim(text, timestamptz, integer) to service_role;

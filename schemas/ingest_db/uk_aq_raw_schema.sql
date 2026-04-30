@@ -171,6 +171,20 @@ create index if not exists openaq_timeseries_checkpoints_last_polled_at_idx
 create index if not exists openaq_timeseries_checkpoints_timeseries_id_idx
   on openaq_timeseries_checkpoints(timeseries_id);
 
+create table if not exists openaq_request_budget_minute (
+  budget_key text not null,
+  bucket_minute timestamptz not null,
+  used_tokens integer not null default 0,
+  last_caller text,
+  updated_at timestamptz not null default now(),
+  primary key (budget_key, bucket_minute),
+  constraint openaq_request_budget_minute_used_tokens_check
+    check (used_tokens >= 0)
+);
+
+create index if not exists openaq_request_budget_minute_bucket_idx
+  on openaq_request_budget_minute(bucket_minute desc);
+
 create table if not exists observation_rpc_metrics_minute (
   bucket_minute timestamptz not null,
   endpoint text not null,
@@ -213,7 +227,7 @@ declare
   t text;
 begin
   for t in
-    select unnest(ARRAY['uk_air_sos_site_register','laqn_site_register','uk_air_sos_station_refs','breathelondon_station_checkpoints','erg_laqn_station_checkpoints','uk_air_sos_timeseries_checkpoints','uk_air_sos_station_checkpoints','openaq_station_checkpoints','openaq_timeseries_checkpoints','observation_rpc_metrics_minute','error_logs']::text[])
+    select unnest(ARRAY['uk_air_sos_site_register','laqn_site_register','uk_air_sos_station_refs','breathelondon_station_checkpoints','erg_laqn_station_checkpoints','uk_air_sos_timeseries_checkpoints','uk_air_sos_station_checkpoints','openaq_station_checkpoints','openaq_timeseries_checkpoints','openaq_request_budget_minute','observation_rpc_metrics_minute','error_logs']::text[])
   loop
     execute format('alter table uk_aq_raw.%I enable row level security', t);
     if not exists (
