@@ -4198,3 +4198,9 @@ drop view if exists uk_aq_public.uk_aq_station_aqi_hourly;
 drop table if exists uk_aq_aqilevels.station_aqi_monthly;
 drop table if exists uk_aq_aqilevels.station_aqi_daily;
 drop table if exists uk_aq_aqilevels.station_aqi_hourly;
+
+-- Daily scheduled task health tracking lives in the focused schema apply file:
+-- schemas/obs_aqi_db/uk_aq_daily_task_health_schema.sql
+--
+-- Keep that file aligned with this main Obs AQI schema when the daily task
+-- health system is folded into the full baseline apply.

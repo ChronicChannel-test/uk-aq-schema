@@ -402,7 +402,8 @@ select cron.unschedule(jobid)
 from cron.job
 where jobname in (
   'uk_aq_openaq_live_sync_observations_15m',
-  'uk_aq_openaq_live_sync_core_hourly'
+  'uk_aq_openaq_live_sync_core_hourly',
+  'uk_aq_openaq_live_sync_core_6h'
 );
 
 select cron.schedule(
@@ -412,7 +413,7 @@ select cron.schedule(
 );
 
 select cron.schedule(
-  'uk_aq_openaq_live_sync_core_hourly',
-  '5 * * * *',
+  'uk_aq_openaq_live_sync_core_6h',
+  '5 */6 * * *',
   $$select uk_aq_ops.uk_aq_openaq_live_sync_schedule_invoke('core', 60);$$
 );
