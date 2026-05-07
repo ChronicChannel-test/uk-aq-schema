@@ -3517,7 +3517,7 @@ begin
   incoming_base as (
     select
       r.timeseries_id,
-      r.station_id,
+      coalesce(r.station_id, ts.station_id) as station_id,
       r.connector_id,
       r.pollutant_code,
       r.timestamp_hour_utc,
@@ -3537,6 +3537,9 @@ begin
       end as rolling24h_mean_ugm3,
       r.hourly_sample_count
     from incoming_raw r
+    left join uk_aq_core.timeseries ts
+      on ts.id = r.timeseries_id
+     and ts.connector_id = r.connector_id
   ),
   incoming as (
     select
@@ -3682,7 +3685,7 @@ begin
   incoming_base as (
     select
       r.timeseries_id,
-      r.station_id,
+      coalesce(r.station_id, ts.station_id) as station_id,
       r.connector_id,
       r.pollutant_code,
       r.timestamp_hour_utc,
@@ -3702,6 +3705,9 @@ begin
       end as rolling24h_mean_ugm3,
       r.hourly_sample_count
     from incoming_raw r
+    left join uk_aq_core.timeseries ts
+      on ts.id = r.timeseries_id
+     and ts.connector_id = r.connector_id
   ),
   incoming as (
     select
@@ -3981,6 +3987,8 @@ begin
      and c.observed_day = k.observed_day
      and c.standard_code = k.standard_code
      and c.pollutant_code = k.pollutant_code
+     and c.station_id is not distinct from k.station_id
+     and c.connector_id is not distinct from k.connector_id
      and c.index_level = lvl.level
     group by
       k.timeseries_id,
@@ -4108,6 +4116,8 @@ begin
      and c.observed_month = k.observed_month
      and c.standard_code = k.standard_code
      and c.pollutant_code = k.pollutant_code
+     and c.station_id is not distinct from k.station_id
+     and c.connector_id is not distinct from k.connector_id
      and c.index_level = lvl.level
     group by
       k.timeseries_id,
@@ -4176,6 +4186,119 @@ revoke all on function uk_aq_public.uk_aq_rpc_timeseries_aqi_rollups_refresh(
   integer[]
 ) from public;
 grant execute on function uk_aq_public.uk_aq_rpc_timeseries_aqi_rollups_refresh(
+  timestamptz,
+  timestamptz,
+  integer[]
+) to service_role;
+
+drop function if exists uk_aq_public.uk_aq_rpc_timeseries_aqi_station_link_health(
+  timestamptz,
+  timestamptz,
+  integer[]
+);
+
+create or replace function uk_aq_public.uk_aq_rpc_timeseries_aqi_station_link_health(
+  p_start_hour_utc timestamptz default null,
+  p_end_hour_utc timestamptz default null,
+  p_timeseries_ids integer[] default null
+)
+returns table (
+  null_station_rows bigint,
+  mismatched_station_rows bigint,
+  null_station_timeseries integer,
+  mismatched_station_timeseries integer,
+  sample_null_timeseries_ids integer[],
+  sample_mismatched_timeseries_ids integer[]
+)
+language plpgsql
+security definer
+set search_path = uk_aq_aqilevels, uk_aq_core, public, pg_catalog
+as $$
+declare
+  v_start_hour timestamptz := null;
+  v_end_hour timestamptz := null;
+begin
+  if auth.role() <> 'service_role' then
+    raise exception 'service_role required';
+  end if;
+
+  if (p_start_hour_utc is null) <> (p_end_hour_utc is null) then
+    raise exception 'p_start_hour_utc and p_end_hour_utc must both be null or both provided';
+  end if;
+
+  if p_start_hour_utc is not null then
+    v_start_hour := date_trunc('hour', p_start_hour_utc);
+    v_end_hour := date_trunc('hour', p_end_hour_utc);
+    if v_end_hour <= v_start_hour then
+      raise exception 'p_end_hour_utc must be greater than p_start_hour_utc';
+    end if;
+  end if;
+
+  return query
+  with hourly as (
+    select
+      h.timeseries_id,
+      h.station_id,
+      h.timestamp_hour_utc
+    from uk_aq_aqilevels.timeseries_aqi_hourly h
+    where
+      (p_timeseries_ids is null or h.timeseries_id = any(p_timeseries_ids))
+      and (v_start_hour is null or h.timestamp_hour_utc >= v_start_hour)
+      and (v_end_hour is null or h.timestamp_hour_utc < v_end_hour)
+  ),
+  joined as (
+    select
+      h.timeseries_id,
+      h.station_id as hourly_station_id,
+      ts.station_id as core_station_id
+    from hourly h
+    join uk_aq_core.timeseries ts
+      on ts.id = h.timeseries_id
+  ),
+  null_rows as (
+    select j.timeseries_id
+    from joined j
+    where j.hourly_station_id is null
+  ),
+  mismatched_rows as (
+    select j.timeseries_id
+    from joined j
+    where j.hourly_station_id is distinct from j.core_station_id
+  ),
+  null_sample as (
+    select coalesce(array_agg(x.timeseries_id order by x.timeseries_id), '{}'::integer[]) as ids
+    from (
+      select distinct n.timeseries_id
+      from null_rows n
+      order by n.timeseries_id
+      limit 20
+    ) x
+  ),
+  mismatch_sample as (
+    select coalesce(array_agg(x.timeseries_id order by x.timeseries_id), '{}'::integer[]) as ids
+    from (
+      select distinct m.timeseries_id
+      from mismatched_rows m
+      order by m.timeseries_id
+      limit 20
+    ) x
+  )
+  select
+    (select count(*) from null_rows)::bigint as null_station_rows,
+    (select count(*) from mismatched_rows)::bigint as mismatched_station_rows,
+    (select count(distinct timeseries_id) from null_rows)::integer as null_station_timeseries,
+    (select count(distinct timeseries_id) from mismatched_rows)::integer as mismatched_station_timeseries,
+    (select ids from null_sample) as sample_null_timeseries_ids,
+    (select ids from mismatch_sample) as sample_mismatched_timeseries_ids;
+end;
+$$;
+
+revoke all on function uk_aq_public.uk_aq_rpc_timeseries_aqi_station_link_health(
+  timestamptz,
+  timestamptz,
+  integer[]
+) from public;
+grant execute on function uk_aq_public.uk_aq_rpc_timeseries_aqi_station_link_health(
   timestamptz,
   timestamptz,
   integer[]
