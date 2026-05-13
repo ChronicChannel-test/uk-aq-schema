@@ -226,6 +226,20 @@ insert into uk_aq_ops.daily_task_definitions (
     null,
     50,
     'GitHub due time allows for very late scheduled workflow starts and roughly an hour of backup runtime. R2 is not integrated into v1 status storage.'
+  ),
+  (
+    'ops.dropbox_prune_raw',
+    'Dropbox prune raw',
+    'ops',
+    'github',
+    time '09:22',
+    time '11:00',
+    'Cloudflare Worker cron for workflow_dispatch currently 22 9 * * * UTC. Check deployed scheduler before relying on this value.',
+    'uk-aq-ops',
+    '.github/workflows/uk_aq_dropbox_prune_raw.yml',
+    null,
+    60,
+    'GitHub due time allows for workflow dispatch delay plus prune runtime.'
   )
 on conflict (task_key) do update
 set
