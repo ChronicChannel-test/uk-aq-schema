@@ -34,8 +34,24 @@ create table if not exists uk_aq_ops.daily_task_definitions (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint daily_task_definitions_platform_check
-    check (platform in ('gcp', 'github', 'supabase', 'cloudflare', 'other'))
+    check (platform in ('gcp', 'github', 'supabase', 'cloudflare', 'other', 'MBPro'))
 );
+
+do $$
+begin
+  if exists (
+    select 1
+    from pg_constraint
+    where conname = 'daily_task_definitions_platform_check'
+      and conrelid = 'uk_aq_ops.daily_task_definitions'::regclass
+  ) then
+    alter table uk_aq_ops.daily_task_definitions
+      drop constraint daily_task_definitions_platform_check;
+  end if;
+  alter table uk_aq_ops.daily_task_definitions
+    add constraint daily_task_definitions_platform_check
+    check (platform in ('gcp', 'github', 'supabase', 'cloudflare', 'other', 'MBPro'));
+end $$;
 
 comment on table uk_aq_ops.daily_task_definitions is
   'Defines daily scheduled tasks expected by the ops health calendar and future email report. Add rows here to extend the system.';
@@ -228,6 +244,20 @@ insert into uk_aq_ops.daily_task_definitions (
     'GitHub due time allows for very late scheduled workflow starts and roughly an hour of backup runtime. R2 is not integrated into v1 status storage.'
   ),
   (
+    'ops.history_integrity',
+    'R2 History integrity',
+    'ops',
+    'MBPro',
+    time '12:00',
+    time '23:59',
+    'Local MBPro integrity task for R2 history/source parity checks and targeted backfill orchestration. Daily profile start target is 12:00 UTC.',
+    'uk-aq-ops',
+    null,
+    'uk-aq-history-integrity',
+    70,
+    'Manual and scheduled integrity runs on MBPro.'
+  ),
+  (
     'ops.dropbox_prune_raw',
     'Dropbox prune raw',
     'ops',
@@ -290,13 +320,114 @@ select distinct on (r.task_key, r.scheduled_for_date)
   r.duration_seconds,
   r.error_message,
   r.summary,
-  r.log_url
+  r.log_url,
+  r.updated_at
 from uk_aq_ops.daily_task_runs r
 join uk_aq_ops.daily_task_definitions d on d.task_key = r.task_key
-order by r.task_key, r.scheduled_for_date, r.attempt desc, r.created_at desc;
+order by r.task_key, r.scheduled_for_date, r.attempt desc, r.updated_at desc;
 
 comment on view uk_aq_ops.daily_task_latest_runs is
   'Latest attempt per task/date for daily scheduled task details.';
+
+create or replace view uk_aq_ops.daily_task_runs_dashboard as
+with base as (
+  select
+    r.id as run_id,
+    r.task_key,
+    d.task_name,
+    d.platform,
+    coalesce(nullif(r.source_repo, ''), nullif(d.source_repo, '')) as source,
+    r.scheduled_for_date,
+    d.scheduled_time_utc,
+    (
+      (
+        r.scheduled_for_date::timestamp
+        + coalesce(d.scheduled_time_utc, time '00:00')
+      ) at time zone 'UTC'
+    ) as scheduled_at_utc,
+    r.attempt,
+    r.status as raw_status,
+    r.started_at,
+    r.finished_at,
+    r.failed_at,
+    r.updated_at,
+    r.duration_seconds,
+    r.summary,
+    r.error_message,
+    r.log_url,
+    case
+      when r.failed_at is not null
+        or lower(coalesce(r.status, '')) in ('failed', 'error') then 'Failed'
+      when r.finished_at is not null
+        or lower(coalesce(r.status, '')) in ('finished', 'success', 'ok', 'completed') then 'Success'
+      when r.started_at is not null then 'Started'
+      when lower(coalesce(r.status, '')) in ('warning', 'partial', 'stopped_limit') then 'Warning'
+      when (
+        (
+          r.scheduled_for_date::timestamp
+          + coalesce(d.scheduled_time_utc, time '00:00')
+        ) at time zone 'UTC'
+      ) < now() - interval '2 minute' then 'Overdue'
+      else 'Scheduled'
+    end as effective_status,
+    coalesce(
+      r.started_at,
+      (
+        (
+          r.scheduled_for_date::timestamp
+          + coalesce(d.scheduled_time_utc, time '00:00')
+        ) at time zone 'UTC'
+      )
+    ) as scheduled_or_started_at,
+    coalesce(r.failed_at, r.finished_at) as finished_or_failed_at,
+    (r.failed_at is not null or lower(coalesce(r.status, '')) in ('failed', 'error')) as is_failed,
+    (
+      r.started_at is null
+      and (
+        (
+          r.scheduled_for_date::timestamp
+          + coalesce(d.scheduled_time_utc, time '00:00')
+        ) at time zone 'UTC'
+      ) < now() - interval '2 minute'
+    ) as is_overdue,
+    (r.started_at is null) as is_not_started,
+    row_number() over (
+      partition by r.scheduled_for_date, r.task_key
+      order by r.attempt desc, r.updated_at desc, r.created_at desc
+    ) as task_day_rank
+  from uk_aq_ops.daily_task_runs r
+  join uk_aq_ops.daily_task_definitions d on d.task_key = r.task_key
+)
+select
+  run_id,
+  task_key,
+  task_name,
+  platform,
+  source,
+  scheduled_for_date,
+  scheduled_time_utc,
+  scheduled_at_utc,
+  attempt,
+  raw_status,
+  started_at,
+  finished_at,
+  failed_at,
+  updated_at,
+  duration_seconds,
+  summary,
+  error_message,
+  log_url,
+  effective_status,
+  scheduled_or_started_at,
+  finished_or_failed_at,
+  is_failed,
+  is_overdue,
+  is_not_started,
+  task_day_rank
+from base;
+
+comment on view uk_aq_ops.daily_task_runs_dashboard is
+  'Dashboard-friendly daily task run projection for latest-per-task and all-attempt views on a selected scheduled_for_date.';
 
 alter table uk_aq_ops.daily_task_definitions enable row level security;
 alter table uk_aq_ops.daily_task_runs enable row level security;
@@ -911,12 +1042,14 @@ grant all on table uk_aq_ops.daily_task_runs to service_role;
 grant all on table uk_aq_ops.daily_task_status to service_role;
 grant select on table uk_aq_ops.daily_task_status_calendar to service_role;
 grant select on table uk_aq_ops.daily_task_latest_runs to service_role;
+grant select on table uk_aq_ops.daily_task_runs_dashboard to service_role;
 
 revoke all on table uk_aq_ops.daily_task_definitions from anon, authenticated;
 revoke all on table uk_aq_ops.daily_task_runs from anon, authenticated;
 revoke all on table uk_aq_ops.daily_task_status from anon, authenticated;
 revoke all on table uk_aq_ops.daily_task_status_calendar from anon, authenticated;
 revoke all on table uk_aq_ops.daily_task_latest_runs from anon, authenticated;
+revoke all on table uk_aq_ops.daily_task_runs_dashboard from anon, authenticated;
 
 revoke all on function uk_aq_public.uk_aq_rpc_daily_task_started(jsonb) from public;
 revoke all on function uk_aq_public.uk_aq_rpc_daily_task_finished(uuid, jsonb) from public;
