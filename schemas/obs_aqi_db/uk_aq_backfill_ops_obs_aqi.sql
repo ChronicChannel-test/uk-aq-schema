@@ -169,8 +169,8 @@ begin
     create policy backfill_runs_service_role
       on uk_aq_ops.backfill_runs
       for all
-      using (auth.role() = 'service_role')
-      with check (auth.role() = 'service_role');
+      using ((select auth.role()) = 'service_role')
+      with check ((select auth.role()) = 'service_role');
   end if;
 
   if not exists (
@@ -183,8 +183,8 @@ begin
     create policy backfill_run_days_service_role
       on uk_aq_ops.backfill_run_days
       for all
-      using (auth.role() = 'service_role')
-      with check (auth.role() = 'service_role');
+      using ((select auth.role()) = 'service_role')
+      with check ((select auth.role()) = 'service_role');
   end if;
 
   if not exists (
@@ -197,8 +197,8 @@ begin
     create policy backfill_checkpoints_service_role
       on uk_aq_ops.backfill_checkpoints
       for all
-      using (auth.role() = 'service_role')
-      with check (auth.role() = 'service_role');
+      using ((select auth.role()) = 'service_role')
+      with check ((select auth.role()) = 'service_role');
   end if;
 
   if not exists (
@@ -211,8 +211,8 @@ begin
     create policy backfill_errors_service_role
       on uk_aq_ops.backfill_errors
       for all
-      using (auth.role() = 'service_role')
-      with check (auth.role() = 'service_role');
+      using ((select auth.role()) = 'service_role')
+      with check ((select auth.role()) = 'service_role');
   end if;
 end $$;
 

@@ -308,7 +308,7 @@ begin
       where p.schemaname = 'uk_aq_core' and p.tablename = t and p.policyname = t || '_select_authenticated'
     ) then
       execute format(
-        'create policy %I on uk_aq_core.%I for select using (auth.role() in (''authenticated'',''service_role''));',
+        'create policy %I on uk_aq_core.%I for select using ((select auth.role()) in (''authenticated'',''service_role''));',
         t || '_select_authenticated', t
       );
     end if;
@@ -317,7 +317,7 @@ begin
       where p.schemaname = 'uk_aq_core' and p.tablename = t and p.policyname = t || '_write_service_role'
     ) then
       execute format(
-        'create policy %I on uk_aq_core.%I for all using (auth.role() = ''service_role'') with check (auth.role() = ''service_role'');',
+        'create policy %I on uk_aq_core.%I for all using ((select auth.role()) = ''service_role'') with check ((select auth.role()) = ''service_role'');',
         t || '_write_service_role', t
       );
     end if;
@@ -414,8 +414,8 @@ begin
   ) then
     execute
       'create policy uk_aq_observs_observations_service_role on uk_aq_observs.observations '
-      'for all using (auth.role() = ''service_role'') '
-      'with check (auth.role() = ''service_role'');';
+      'for all using ((select auth.role()) = ''service_role'') '
+      'with check ((select auth.role()) = ''service_role'');';
   end if;
 end $$;
 
@@ -783,8 +783,8 @@ begin
     create policy backfill_runs_service_role
       on uk_aq_ops.backfill_runs
       for all
-      using (auth.role() = 'service_role')
-      with check (auth.role() = 'service_role');
+      using ((select auth.role()) = 'service_role')
+      with check ((select auth.role()) = 'service_role');
   end if;
 
   if not exists (
@@ -797,8 +797,8 @@ begin
     create policy backfill_run_days_service_role
       on uk_aq_ops.backfill_run_days
       for all
-      using (auth.role() = 'service_role')
-      with check (auth.role() = 'service_role');
+      using ((select auth.role()) = 'service_role')
+      with check ((select auth.role()) = 'service_role');
   end if;
 
   if not exists (
@@ -811,8 +811,8 @@ begin
     create policy backfill_checkpoints_service_role
       on uk_aq_ops.backfill_checkpoints
       for all
-      using (auth.role() = 'service_role')
-      with check (auth.role() = 'service_role');
+      using ((select auth.role()) = 'service_role')
+      with check ((select auth.role()) = 'service_role');
   end if;
 
   if not exists (
@@ -825,8 +825,8 @@ begin
     create policy backfill_errors_service_role
       on uk_aq_ops.backfill_errors
       for all
-      using (auth.role() = 'service_role')
-      with check (auth.role() = 'service_role');
+      using ((select auth.role()) = 'service_role')
+      with check ((select auth.role()) = 'service_role');
   end if;
 end $$;
 
@@ -2785,7 +2785,7 @@ begin
         and p.policyname = t || '_select_authenticated'
     ) then
       execute format(
-        'create policy %I on uk_aq_aqilevels.%I for select using (auth.role() in (''authenticated'',''service_role''));',
+        'create policy %I on uk_aq_aqilevels.%I for select using ((select auth.role()) in (''authenticated'',''service_role''));',
         t || '_select_authenticated',
         t
       );
@@ -2798,7 +2798,7 @@ begin
         and p.policyname = t || '_write_service_role'
     ) then
       execute format(
-        'create policy %I on uk_aq_aqilevels.%I for all using (auth.role() = ''service_role'') with check (auth.role() = ''service_role'');',
+        'create policy %I on uk_aq_aqilevels.%I for all using ((select auth.role()) = ''service_role'') with check ((select auth.role()) = ''service_role'');',
         t || '_write_service_role',
         t
       );
@@ -2821,8 +2821,8 @@ begin
     create policy aqi_compute_runs_service_role
       on uk_aq_ops.aqi_compute_runs
       for all
-      using (auth.role() = 'service_role')
-      with check (auth.role() = 'service_role');
+      using ((select auth.role()) = 'service_role')
+      with check ((select auth.role()) = 'service_role');
   end if;
 end
 $$;
@@ -3398,7 +3398,7 @@ begin
         and p.policyname = t || '_select_authenticated'
     ) then
       execute format(
-        'create policy %I on uk_aq_aqilevels.%I for select using (auth.role() in (''authenticated'',''service_role''));',
+        'create policy %I on uk_aq_aqilevels.%I for select using ((select auth.role()) in (''authenticated'',''service_role''));',
         t || '_select_authenticated',
         t
       );
@@ -3412,7 +3412,7 @@ begin
         and p.policyname = t || '_write_service_role'
     ) then
       execute format(
-        'create policy %I on uk_aq_aqilevels.%I for all using (auth.role() = ''service_role'') with check (auth.role() = ''service_role'');',
+        'create policy %I on uk_aq_aqilevels.%I for all using ((select auth.role()) = ''service_role'') with check ((select auth.role()) = ''service_role'');',
         t || '_write_service_role',
         t
       );

@@ -938,7 +938,7 @@ begin
       where p.schemaname = 'uk_aq_core' and p.tablename = t and p.policyname = t || '_select_authenticated'
     ) then
       execute format(
-        'create policy %I on uk_aq_core.%I for select using (auth.role() in (''authenticated'',''service_role''));',
+        'create policy %I on uk_aq_core.%I for select using ((select auth.role()) in (''authenticated'',''service_role''));',
         t || '_select_authenticated', t
       );
     end if;
@@ -947,7 +947,7 @@ begin
       where p.schemaname = 'uk_aq_core' and p.tablename = t and p.policyname = t || '_write_service_role'
     ) then
       execute format(
-        'create policy %I on uk_aq_core.%I for all using (auth.role() = ''service_role'') with check (auth.role() = ''service_role'');',
+        'create policy %I on uk_aq_core.%I for all using ((select auth.role()) = ''service_role'') with check ((select auth.role()) = ''service_role'');',
         t || '_write_service_role', t
       );
     end if;
@@ -1003,7 +1003,7 @@ begin
         and p.policyname = 'spatial_ref_sys_select_all'
     ) then
       execute
-        'create policy spatial_ref_sys_select_all on public.spatial_ref_sys for select using (auth.role() in (''anon'',''authenticated'',''service_role''));';
+        'create policy spatial_ref_sys_select_all on public.spatial_ref_sys for select using ((select auth.role()) in (''anon'',''authenticated'',''service_role''));';
     end if;
   else
     raise notice 'Skipping RLS on public.spatial_ref_sys; owner is %, current_user is %', owner_name, current_user;

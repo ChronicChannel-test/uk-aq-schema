@@ -444,8 +444,8 @@ begin
     create policy daily_task_definitions_service_role
       on uk_aq_ops.daily_task_definitions
       for all
-      using (auth.role() = 'service_role')
-      with check (auth.role() = 'service_role');
+      using ((select auth.role()) = 'service_role')
+      with check ((select auth.role()) = 'service_role');
   end if;
 
   if not exists (
@@ -457,8 +457,8 @@ begin
     create policy daily_task_runs_service_role
       on uk_aq_ops.daily_task_runs
       for all
-      using (auth.role() = 'service_role')
-      with check (auth.role() = 'service_role');
+      using ((select auth.role()) = 'service_role')
+      with check ((select auth.role()) = 'service_role');
   end if;
 
   if not exists (
@@ -470,8 +470,8 @@ begin
     create policy daily_task_status_service_role
       on uk_aq_ops.daily_task_status
       for all
-      using (auth.role() = 'service_role')
-      with check (auth.role() = 'service_role');
+      using ((select auth.role()) = 'service_role')
+      with check ((select auth.role()) = 'service_role');
   end if;
 end $$;
 

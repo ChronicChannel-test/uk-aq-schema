@@ -194,7 +194,7 @@ begin
         and p.policyname = t || '_select_service_role'
     ) then
       execute format(
-        'create policy %I on uk_aq_aqilevels.%I for select using (auth.role() = ''service_role'');',
+        'create policy %I on uk_aq_aqilevels.%I for select using ((select auth.role()) = ''service_role'');',
         t || '_select_service_role',
         t
       );
@@ -208,7 +208,7 @@ begin
         and p.policyname = t || '_write_service_role'
     ) then
       execute format(
-        'create policy %I on uk_aq_aqilevels.%I for all using (auth.role() = ''service_role'') with check (auth.role() = ''service_role'');',
+        'create policy %I on uk_aq_aqilevels.%I for all using ((select auth.role()) = ''service_role'') with check ((select auth.role()) = ''service_role'');',
         t || '_write_service_role',
         t
       );
@@ -317,7 +317,7 @@ begin
     create policy timeseries_aqi_hourly_helper_select_service_role
       on uk_aq_aqilevels.timeseries_aqi_hourly_helper
       for select
-      using (auth.role() = 'service_role');
+      using ((select auth.role()) = 'service_role');
   end if;
 
   if not exists (
@@ -330,8 +330,8 @@ begin
     create policy timeseries_aqi_hourly_helper_write_service_role
       on uk_aq_aqilevels.timeseries_aqi_hourly_helper
       for all
-      using (auth.role() = 'service_role')
-      with check (auth.role() = 'service_role');
+      using ((select auth.role()) = 'service_role')
+      with check ((select auth.role()) = 'service_role');
   end if;
 end
 $$;

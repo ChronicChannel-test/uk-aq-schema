@@ -235,7 +235,7 @@ begin
       where p.schemaname = 'uk_aq_raw' and p.tablename = t and p.policyname = t || '_select_service_role'
     ) then
       execute format(
-        'create policy %I on uk_aq_raw.%I for select using (auth.role() = ''service_role'');',
+        'create policy %I on uk_aq_raw.%I for select using ((select auth.role()) = ''service_role'');',
         t || '_select_service_role', t
       );
     end if;
@@ -244,7 +244,7 @@ begin
       where p.schemaname = 'uk_aq_raw' and p.tablename = t and p.policyname = t || '_write_service_role'
     ) then
       execute format(
-        'create policy %I on uk_aq_raw.%I for all using (auth.role() = ''service_role'') with check (auth.role() = ''service_role'');',
+        'create policy %I on uk_aq_raw.%I for all using ((select auth.role()) = ''service_role'') with check ((select auth.role()) = ''service_role'');',
         t || '_write_service_role', t
       );
     end if;

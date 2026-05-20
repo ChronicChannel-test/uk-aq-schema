@@ -46,7 +46,7 @@ begin
   ) then
     execute 'create policy observs_observation_outbox_select_service_role '
       'on uk_aq_raw.observs_observation_outbox '
-      'for select using (auth.role() = ''service_role'')';
+      'for select using ((select auth.role()) = ''service_role'')';
   end if;
 
   if not exists (
@@ -58,8 +58,8 @@ begin
   ) then
     execute 'create policy observs_observation_outbox_write_service_role '
       'on uk_aq_raw.observs_observation_outbox '
-      'for all using (auth.role() = ''service_role'') '
-      'with check (auth.role() = ''service_role'')';
+      'for all using ((select auth.role()) = ''service_role'') '
+      'with check ((select auth.role()) = ''service_role'')';
   end if;
 
   if not exists (
@@ -71,7 +71,7 @@ begin
   ) then
     execute 'create policy observs_sync_receipt_daily_select_service_role '
       'on uk_aq_raw.observs_sync_receipt_daily '
-      'for select using (auth.role() = ''service_role'')';
+      'for select using ((select auth.role()) = ''service_role'')';
   end if;
 
   if not exists (
@@ -83,8 +83,8 @@ begin
   ) then
     execute 'create policy observs_sync_receipt_daily_write_service_role '
       'on uk_aq_raw.observs_sync_receipt_daily '
-      'for all using (auth.role() = ''service_role'') '
-      'with check (auth.role() = ''service_role'')';
+      'for all using ((select auth.role()) = ''service_role'') '
+      'with check ((select auth.role()) = ''service_role'')';
   end if;
 end $$;
 
