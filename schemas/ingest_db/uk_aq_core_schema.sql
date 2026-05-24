@@ -396,6 +396,7 @@ create unique index if not exists stations_connector_ref_uidx
   on stations(connector_id, service_ref, station_ref);
 create index if not exists stations_geom_idx on stations using gist (geometry);
 create index if not exists stations_geom_cast_idx on stations using gist ((geometry::geometry));
+create index if not exists stations_station_ref_idx on stations(station_ref);
 create index if not exists stations_la_code_idx on stations(la_code);
 create index if not exists stations_la_version_idx on stations(la_version);
 create index if not exists stations_pcon_code_idx on stations(pcon_code);
@@ -675,6 +676,8 @@ create table if not exists observations_default
   partition of observations default;
 
 create index if not exists observations_time_idx on observations(observed_at);
+create index if not exists observations_timeseries_observed_at_desc_idx
+  on observations(timeseries_id, observed_at desc);
 
 -- Ingest run summaries
 
