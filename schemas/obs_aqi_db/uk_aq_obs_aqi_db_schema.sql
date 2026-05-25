@@ -988,6 +988,27 @@ select
 from uk_aq_ops.service_egress_metrics_minute;
 alter view if exists uk_aq_public.uk_aq_service_egress_metrics_minute set (security_invoker = true);
 
+create or replace view uk_aq_public.uk_aq_endpoint_egress_metrics_24h_dashboard as
+select
+  bucket_minute,
+  endpoint,
+  method,
+  status_class,
+  observed_requests,
+  estimated_requests,
+  response_bytes_sum,
+  response_bytes_max,
+  duration_ms_sum,
+  duration_ms_max,
+  response_bytes_avg,
+  duration_ms_avg,
+  updated_at
+from uk_aq_public.uk_aq_endpoint_egress_metrics_minute
+where bucket_minute >= (now() - interval '24 hours');
+alter view if exists uk_aq_public.uk_aq_endpoint_egress_metrics_24h_dashboard set (security_invoker = true);
+
+drop view if exists uk_aq_public.uk_aq_service_egress_metrics_24h_dashboard;
+
 create or replace view uk_aq_public.uk_aq_service_egress_metrics_daily as
 select
   (bucket_minute at time zone 'UTC')::date as day_utc,
@@ -2362,6 +2383,10 @@ grant select on uk_aq_public.uk_aq_schema_size_metrics_hourly to service_role;
 revoke all on uk_aq_public.uk_aq_service_egress_metrics_minute from public;
 grant select on uk_aq_public.uk_aq_service_egress_metrics_minute to authenticated;
 grant select on uk_aq_public.uk_aq_service_egress_metrics_minute to service_role;
+
+revoke all on uk_aq_public.uk_aq_endpoint_egress_metrics_24h_dashboard from public;
+grant select on uk_aq_public.uk_aq_endpoint_egress_metrics_24h_dashboard to authenticated;
+grant select on uk_aq_public.uk_aq_endpoint_egress_metrics_24h_dashboard to service_role;
 
 revoke all on uk_aq_public.uk_aq_service_egress_metrics_daily from public;
 grant select on uk_aq_public.uk_aq_service_egress_metrics_daily to authenticated;
