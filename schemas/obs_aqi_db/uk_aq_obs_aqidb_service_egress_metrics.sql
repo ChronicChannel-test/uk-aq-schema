@@ -60,6 +60,27 @@ create index if not exists service_egress_metrics_minute_window_bucket_idx
     bucket_minute desc
   );
 
+create table if not exists uk_aq_ops.endpoint_egress_metrics_minute (
+  bucket_minute timestamptz not null,
+  endpoint text not null,
+  method text not null,
+  status_class text not null check (status_class in ('2xx', '3xx', '4xx', '5xx', 'other')),
+  observed_requests bigint not null default 0,
+  estimated_requests numeric(18,4) not null default 0,
+  response_bytes_sum bigint not null default 0,
+  response_bytes_max integer not null default 0,
+  duration_ms_sum bigint not null default 0,
+  duration_ms_max integer not null default 0,
+  updated_at timestamptz not null default now(),
+  primary key (bucket_minute, endpoint, method, status_class)
+);
+
+create index if not exists endpoint_egress_metrics_minute_endpoint_idx
+  on uk_aq_ops.endpoint_egress_metrics_minute (
+    endpoint,
+    bucket_minute desc
+  );
+
 create or replace view uk_aq_public.uk_aq_service_egress_metrics_minute as
 select
   bucket_minute,
@@ -88,6 +109,24 @@ select
   updated_at
 from uk_aq_ops.service_egress_metrics_minute;
 alter view if exists uk_aq_public.uk_aq_service_egress_metrics_minute set (security_invoker = true);
+
+create or replace view uk_aq_public.uk_aq_endpoint_egress_metrics_minute as
+select
+  bucket_minute,
+  endpoint,
+  method,
+  status_class,
+  observed_requests,
+  estimated_requests,
+  response_bytes_sum,
+  response_bytes_max,
+  duration_ms_sum,
+  duration_ms_max,
+  case when observed_requests > 0 then round((response_bytes_sum::numeric / observed_requests), 2) else 0 end as response_bytes_avg,
+  case when observed_requests > 0 then round((duration_ms_sum::numeric / observed_requests), 2) else 0 end as duration_ms_avg,
+  updated_at
+from uk_aq_ops.endpoint_egress_metrics_minute;
+alter view if exists uk_aq_public.uk_aq_endpoint_egress_metrics_minute set (security_invoker = true);
 
 create or replace view uk_aq_public.uk_aq_endpoint_egress_metrics_24h_dashboard as
 select
@@ -324,6 +363,12 @@ grant execute on function uk_aq_public.uk_aq_rpc_service_egress_metrics_batch_up
 revoke all on uk_aq_public.uk_aq_service_egress_metrics_minute from public;
 grant select on uk_aq_public.uk_aq_service_egress_metrics_minute to authenticated;
 grant select on uk_aq_public.uk_aq_service_egress_metrics_minute to service_role;
+
+grant all on table uk_aq_ops.endpoint_egress_metrics_minute to service_role;
+
+revoke all on uk_aq_public.uk_aq_endpoint_egress_metrics_minute from public;
+grant select on uk_aq_public.uk_aq_endpoint_egress_metrics_minute to authenticated;
+grant select on uk_aq_public.uk_aq_endpoint_egress_metrics_minute to service_role;
 
 revoke all on uk_aq_public.uk_aq_endpoint_egress_metrics_24h_dashboard from public;
 grant select on uk_aq_public.uk_aq_endpoint_egress_metrics_24h_dashboard to authenticated;
