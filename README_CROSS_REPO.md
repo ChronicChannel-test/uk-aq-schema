@@ -47,7 +47,7 @@ No scripted commands were found in this repo. There is no preferred schema-apply
 - Schemas directory: `schemas/`
 - System docs: `system_docs/`
 - Ingest repo (sibling): `../CIC-test-uk-aq-ingest`
-- Ops repo (sibling): `../CIC-test-uk-aq Operations/CIC-test-uk-aq-ops`
+- Ops repo (sibling): `../CIC-test-uk-aq-Operations/CIC-test-uk-aq-ops`
 - Naming conventions (ingest repo): `../CIC-test-uk-aq-ingest/AGENTS.md`
 
 ## WORKING STYLE (IMPORTANT)
