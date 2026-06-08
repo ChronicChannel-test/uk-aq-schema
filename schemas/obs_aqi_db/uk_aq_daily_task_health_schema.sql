@@ -230,6 +230,20 @@ insert into uk_aq_ops.daily_task_definitions (
     'GitHub due time allows for very late scheduled workflow starts.'
   ),
   (
+    'ops.r2_core_snapshot',
+    'R2 core snapshot',
+    'ops',
+    'github',
+    time '04:15',
+    time '04:25',
+    'Intended external Cloudflare Worker schedule for workflow_dispatch: 04:15 UTC daily. Previous GitHub cron observed in workflow comments: 15 4 * * * UTC.',
+    'uk-aq-ops',
+    '.github/workflows/uk_aq_r2_core_snapshot.yml',
+    null,
+    45,
+    'GitHub due time allows for workflow dispatch delay and brief snapshot runtime.'
+  ),
+  (
     'ops.r2_history_dropbox_backup',
     'R2 history Dropbox backup',
     'ops',

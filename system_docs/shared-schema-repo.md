@@ -58,8 +58,12 @@ set -euo pipefail
 SCHEMA_DIR="${PWD}/vendor/uk-aq-schema"
 psql "$HISTORY_DB_URL" <<'SQL'
 \i '"$SCHEMA_DIR/schemas/obs_aqi_db/uk_aq_obs_aqi_db_schema.sql"'
+\i '"$SCHEMA_DIR/schemas/obs_aqi_db/uk_aq_daily_task_health_schema.sql"'
 SQL
 ```
+
+Note:
+- The focused `uk_aq_daily_task_health_schema.sql` file carries the `uk_aq_ops.daily_task_definitions` seed rows, including new GitHub daily task keys such as `ops.r2_core_snapshot`.
 
 Notes:
 - `drop_uk_air_quality_tables.sql` is for manual use only.
