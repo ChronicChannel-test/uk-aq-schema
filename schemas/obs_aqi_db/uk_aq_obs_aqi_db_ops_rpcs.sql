@@ -292,16 +292,42 @@ create or replace function uk_aq_public.uk_aq_rpc_aqilevels_history_day_rows(
   p_limit integer default 20000
 )
 returns table (
-  timeseries_id integer,
-  station_id bigint,
   connector_id integer,
+  station_id bigint,
+  timeseries_id integer,
   pollutant_code text,
   timestamp_hour_utc timestamptz,
+  daqi_input_value_ugm3 double precision,
+  daqi_input_averaging_code text,
+  daqi_index_level smallint,
+  daqi_source_observation_count smallint,
+  daqi_required_observation_count smallint,
+  daqi_calculation_status text,
+  daqi_missing_reason text,
+  eaqi_input_value_ugm3 double precision,
+  eaqi_input_averaging_code text,
+  eaqi_index_level smallint,
+  eaqi_source_observation_count smallint,
+  eaqi_required_observation_count smallint,
+  eaqi_calculation_status text,
+  eaqi_missing_reason text,
+  hourly_sample_count smallint,
+  algorithm_version text,
+  computed_at_utc timestamptz,
   hourly_mean_ugm3 double precision,
   rolling24h_mean_ugm3 double precision,
-  hourly_sample_count smallint,
-  daqi_index_level smallint,
-  eaqi_index_level smallint
+  no2_hourly_mean_ugm3 double precision,
+  pm25_hourly_mean_ugm3 double precision,
+  pm10_hourly_mean_ugm3 double precision,
+  pm25_rolling24h_mean_ugm3 double precision,
+  pm10_rolling24h_mean_ugm3 double precision,
+  daqi_no2_index_level smallint,
+  daqi_pm25_rolling24h_index_level smallint,
+  daqi_pm10_rolling24h_index_level smallint,
+  eaqi_no2_index_level smallint,
+  eaqi_pm25_index_level smallint,
+  eaqi_pm10_index_level smallint,
+  updated_at timestamptz
 )
 language plpgsql
 security definer
@@ -334,17 +360,43 @@ begin
 
   return query
   select
-    h.timeseries_id,
-    h.station_id,
     h.connector_id,
+    h.station_id,
+    h.timeseries_id,
     h.pollutant_code,
     h.timestamp_hour_utc,
+    h.daqi_input_value_ugm3,
+    h.daqi_input_averaging_code,
+    h.daqi_index_level,
+    h.daqi_source_observation_count,
+    h.daqi_required_observation_count,
+    h.daqi_calculation_status,
+    h.daqi_missing_reason,
+    h.eaqi_input_value_ugm3,
+    h.eaqi_input_averaging_code,
+    h.eaqi_index_level,
+    h.eaqi_source_observation_count,
+    h.eaqi_required_observation_count,
+    h.eaqi_calculation_status,
+    h.eaqi_missing_reason,
+    h.hourly_sample_count,
+    h.algorithm_version,
+    h.computed_at_utc,
     h.hourly_mean_ugm3,
     h.rolling24h_mean_ugm3,
-    h.hourly_sample_count,
-    h.daqi_index_level,
-    h.eaqi_index_level
-  from uk_aq_aqilevels.timeseries_aqi_hourly h
+    h.no2_hourly_mean_ugm3,
+    h.pm25_hourly_mean_ugm3,
+    h.pm10_hourly_mean_ugm3,
+    h.pm25_rolling24h_mean_ugm3,
+    h.pm10_rolling24h_mean_ugm3,
+    h.daqi_no2_index_level,
+    h.daqi_pm25_rolling24h_index_level,
+    h.daqi_pm10_rolling24h_index_level,
+    h.eaqi_no2_index_level,
+    h.eaqi_pm25_index_level,
+    h.eaqi_pm10_index_level,
+    h.updated_at
+  from uk_aq_public.uk_aq_timeseries_aqi_hourly h
   where h.connector_id = p_connector_id
     and h.timestamp_hour_utc >= v_start
     and h.timestamp_hour_utc < v_end

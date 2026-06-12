@@ -262,6 +262,24 @@ create unique index if not exists phenomena_connector_source_label_uidx
 create index if not exists phenomena_observed_property_idx
   on phenomena(observed_property_id);
 
+do $$
+declare
+  v_sequence text;
+  v_next_id bigint;
+begin
+  select pg_get_serial_sequence('uk_aq_core.observed_properties', 'id')
+  into v_sequence;
+
+  if v_sequence is not null then
+    select coalesce(max(id), 0) + 1
+    into v_next_id
+    from uk_aq_core.observed_properties;
+
+    execute format('select setval(%L::regclass, %s, false)', v_sequence, v_next_id);
+  end if;
+end
+$$;
+
 insert into observed_properties (
   code,
   display_name,

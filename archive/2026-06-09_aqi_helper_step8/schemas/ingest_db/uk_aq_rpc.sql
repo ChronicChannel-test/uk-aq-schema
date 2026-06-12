@@ -40,68 +40,17 @@ as $$
       nullif(trim(la_version), '') as la_version,
       least(10000, greatest(1, coalesce(limit_rows, 1000)))::int as limit_rows,
       since_ts as since_ts
-  ),
-  pm25_candidates as (
-    select
-      ts.station_id,
-      ts.last_value,
-      ts.last_value_at,
-      row_number() over (
-        partition by ts.station_id
-        order by ts.last_value_at desc nulls last
-      ) as rn
-    from timeseries ts
-    join phenomena phen on phen.id = ts.phenomenon_id
-    left join observed_properties op on op.id = phen.observed_property_id
-    where ts.station_id is not null
-      and ts.last_value is not null
-      and ts.last_value_at is not null
-      and ts.last_value >= 0
-      and (
-        op.code = 'pm25'
-        or (
-          op.code is null and (
-            lower(coalesce(phen.pollutant_label, '')) = 'pm2.5'
-            or lower(coalesce(phen.notation, '')) = 'pm2.5'
-            or lower(coalesce(phen.label, '')) like '%pm2.5%'
-          )
-        )
-      )
-  ),
-  pm25_latest as (
-    select
-      stn.la_code,
-      stn.la_version,
-      pm.last_value,
-      pm.last_value_at
-    from pm25_candidates pm
-    join stations stn on stn.id = pm.station_id
-    where pm.rn = 1
-      and stn.la_code is not null
-  ),
-  pm25_agg as (
-    select
-      la_code,
-      la_version,
-      count(*)::int as station_count,
-      percentile_cont(0.5) within group (order by last_value) as median_value,
-      avg(last_value) as mean_value,
-      max(last_value_at) as latest_value_at
-    from pm25_latest
-    group by la_code, la_version
   )
   select
     l.la_code,
-    gc.name as la_name,
+    l.la_name,
     l.la_version,
     l.station_count,
-    (l.station_count = 1) as single_site,
+    l.single_site,
     l.median_value,
     l.mean_value,
     l.latest_value_at
-  from pm25_agg l
-  left join gss_codes gc
-    on gc.gss_code = l.la_code
+  from uk_aq_core.la_latest_pm25 l
   cross join params
   where (params.la_version is null or l.la_version = params.la_version)
     and (params.region_codes is null or l.la_code = any(params.region_codes))
@@ -675,74 +624,19 @@ as $$
       nullif(trim(pcon_version), '') as pcon_version,
       least(10000, greatest(1, coalesce(limit_rows, 1000)))::int as limit_rows,
       since_ts as since_ts
-  ),
-  pm25_candidates as (
-    select
-      ts.station_id,
-      ts.last_value,
-      ts.last_value_at,
-      row_number() over (
-        partition by ts.station_id
-        order by ts.last_value_at desc nulls last
-      ) as rn
-    from timeseries ts
-    join phenomena phen on phen.id = ts.phenomenon_id
-    left join observed_properties op on op.id = phen.observed_property_id
-    where ts.station_id is not null
-      and ts.last_value is not null
-      and ts.last_value_at is not null
-      and ts.last_value >= 0
-      and (
-        op.code = 'pm25'
-        or (
-          op.code is null and (
-            lower(coalesce(phen.pollutant_label, '')) = 'pm2.5'
-            or lower(coalesce(phen.notation, '')) = 'pm2.5'
-            or lower(coalesce(phen.label, '')) like '%pm2.5%'
-          )
-        )
-      )
-  ),
-  pm25_latest as (
-    select
-      stn.pcon_code,
-      stn.pcon_version,
-      pm.last_value,
-      pm.last_value_at
-    from pm25_candidates pm
-    join stations stn on stn.id = pm.station_id
-    where pm.rn = 1
-      and stn.pcon_code is not null
-  ),
-  pm25_agg as (
-    select
-      pcon_code,
-      pcon_version,
-      count(*)::int as station_count,
-      percentile_cont(0.5) within group (order by last_value) as median_value,
-      avg(last_value) as mean_value,
-      max(last_value_at) as latest_value_at
-    from pm25_latest
-    group by pcon_code, pcon_version
   )
   select
     p.pcon_code,
-    coalesce(pc.name, pl.name, gc.name) as pcon_name,
+    p.pcon_name,
     p.pcon_version,
     p.station_count,
-    (p.station_count = 1) as single_site,
+    p.single_site,
     p.median_value,
     p.mean_value,
     p.latest_value_at
-  from pm25_agg p
-  left join pcon_current pc
-    on pc.gss_code = p.pcon_code
-  left join pcon_legacy pl
-    on pl.gss_code = p.pcon_code
-  left join gss_codes gc
-    on gc.gss_code = p.pcon_code
+  from uk_aq_core.pcon_latest_pm25 p
   cross join params
-  where (params.pcon_version is null or p.pcon_version = params.pcon_version)
+  where params.pcon_version is null or p.pcon_version = params.pcon_version
     and (params.since_ts is null or p.latest_value_at > params.since_ts)
   limit (select limit_rows from params);
 $$;
@@ -2939,7 +2833,6 @@ declare
   v_source_start timestamptz;
   v_source_end timestamptz;
   v_reference_end timestamptz;
-  v_reference_effective_date date;
   v_source_rows integer := 0;
   v_rows_upserted integer := 0;
   v_timeseries_hours_changed integer := 0;
@@ -2962,7 +2855,6 @@ begin
   v_source_start := v_start_exclusive - interval '23 hours';
   v_source_end := v_end_inclusive;
   v_reference_end := date_trunc('hour', coalesce(p_reference_hour_end_utc, v_end_inclusive));
-  v_reference_effective_date := (v_reference_end at time zone 'UTC')::date;
 
   with source_rows as (
     select
@@ -3089,16 +2981,6 @@ begin
         else null
       end as pm10_rolling24h_mean_ugm3,
       case
-        when wr.pollutant_code = 'pm25' then wr.pm25_rolling24h_valid_hours_raw
-        when wr.pollutant_code = 'pm10' then wr.pm10_rolling24h_valid_hours_raw
-        else null
-      end as pm25_rolling24h_valid_hours_raw,
-      case
-        when wr.pollutant_code = 'pm25' then wr.pm25_rolling24h_valid_hours_raw
-        when wr.pollutant_code = 'pm10' then wr.pm10_rolling24h_valid_hours_raw
-        else null
-      end as pm10_rolling24h_valid_hours_raw,
-      case
         when wr.sample_count is null then null
         else least(32767, greatest(0, wr.sample_count))::smallint
       end as hourly_sample_count
@@ -3117,112 +2999,13 @@ begin
       or t.pm25_rolling24h_mean_ugm3 is not null
       or t.pm10_rolling24h_mean_ugm3 is not null
   ),
-  normalized_values as (
-    select
-      c.*,
-      case
-        when c.pollutant_code = 'no2' then c.no2_hourly_mean_ugm3
-        when c.pollutant_code = 'pm25' then c.pm25_rolling24h_mean_ugm3
-        when c.pollutant_code = 'pm10' then c.pm10_rolling24h_mean_ugm3
-        else null
-      end as daqi_input_value_ugm3,
-      case
-        when c.pollutant_code = 'no2' then 'hourly_mean'
-        else 'rolling_24h_mean'
-      end as daqi_input_averaging_code,
-      case
-        when c.pollutant_code = 'no2' then c.hourly_sample_count
-        when c.pollutant_code = 'pm25' then least(32767, greatest(0, coalesce(c.pm25_rolling24h_valid_hours_raw, 0)))::smallint
-        when c.pollutant_code = 'pm10' then least(32767, greatest(0, coalesce(c.pm10_rolling24h_valid_hours_raw, 0)))::smallint
-        else null
-      end as daqi_source_observation_count,
-      case
-        when c.pollutant_code = 'no2' then 1
-        else 24
-      end as daqi_required_observation_count,
-      case
-        when (
-          case
-            when c.pollutant_code = 'no2' then c.no2_hourly_mean_ugm3
-            when c.pollutant_code = 'pm25' then c.pm25_rolling24h_mean_ugm3
-            when c.pollutant_code = 'pm10' then c.pm10_rolling24h_mean_ugm3
-            else null
-          end
-        ) is null then 'missing_input'
-        else 'ok'
-      end as daqi_calculation_status,
-      case
-        when (
-          case
-            when c.pollutant_code = 'no2' then c.no2_hourly_mean_ugm3
-            when c.pollutant_code = 'pm25' then c.pm25_rolling24h_mean_ugm3
-            when c.pollutant_code = 'pm10' then c.pm10_rolling24h_mean_ugm3
-            else null
-          end
-        ) is null then 'missing_input'
-        else null
-      end as daqi_missing_reason,
-      case
-        when c.pollutant_code = 'no2' then c.no2_hourly_mean_ugm3
-        when c.pollutant_code = 'pm25' then c.pm25_hourly_mean_ugm3
-        when c.pollutant_code = 'pm10' then c.pm10_hourly_mean_ugm3
-        else null
-      end as eaqi_input_value_ugm3,
-      'hourly_mean'::text as eaqi_input_averaging_code,
-      c.hourly_sample_count as eaqi_source_observation_count,
-      1 as eaqi_required_observation_count,
-      case
-        when (
-          case
-            when c.pollutant_code = 'no2' then c.no2_hourly_mean_ugm3
-            when c.pollutant_code = 'pm25' then c.pm25_hourly_mean_ugm3
-            when c.pollutant_code = 'pm10' then c.pm10_hourly_mean_ugm3
-            else null
-          end
-        ) is null then 'missing_input'
-        else 'ok'
-      end as eaqi_calculation_status,
-      case
-        when (
-          case
-            when c.pollutant_code = 'no2' then c.no2_hourly_mean_ugm3
-            when c.pollutant_code = 'pm25' then c.pm25_hourly_mean_ugm3
-            when c.pollutant_code = 'pm10' then c.pm10_hourly_mean_ugm3
-            else null
-          end
-        ) is null then 'missing_input'
-        else null
-      end as eaqi_missing_reason
-    from computed c
-  ),
-  indexed as (
-    select
-      n.*,
-      daqi_lookup.index_level as daqi_index_level,
-      eaqi_lookup.index_level as eaqi_index_level
-    from normalized_values n
-    left join lateral uk_aq_aqi_index_lookup(
-      'daqi',
-      n.pollutant_code,
-      n.daqi_input_averaging_code,
-      n.daqi_input_value_ugm3,
-      coalesce(v_reference_effective_date, (n.timestamp_hour_utc at time zone 'UTC')::date)
-    ) daqi_lookup on true
-    left join lateral uk_aq_aqi_index_lookup(
-      'eaqi',
-      n.pollutant_code,
-      n.eaqi_input_averaging_code,
-      n.eaqi_input_value_ugm3,
-      coalesce(v_reference_effective_date, (n.timestamp_hour_utc at time zone 'UTC')::date)
-    ) eaqi_lookup on true
-  ),
   changed as (
     select
-      i.*
-    from indexed i
+      c.*
+    from computed c
     left join uk_aq_aqilevels.timeseries_aqi_hourly_helper e
-      on e.timeseries_id = i.timeseries_id
-     and e.timestamp_hour_utc = i.timestamp_hour_utc
+      on e.timeseries_id = c.timeseries_id
+     and e.timestamp_hour_utc = c.timestamp_hour_utc
     where
       e.timeseries_id is null
       or (
@@ -3230,42 +3013,24 @@ begin
           e.station_id,
           e.connector_id,
           e.pollutant_code,
-          e.daqi_input_value_ugm3,
-          e.daqi_input_averaging_code,
-          e.daqi_index_level,
-          e.daqi_source_observation_count,
-          e.daqi_required_observation_count,
-          e.daqi_calculation_status,
-          e.daqi_missing_reason,
-          e.eaqi_input_value_ugm3,
-          e.eaqi_input_averaging_code,
-          e.eaqi_index_level,
-          e.eaqi_source_observation_count,
-          e.eaqi_required_observation_count,
-          e.eaqi_calculation_status,
-          e.eaqi_missing_reason,
+          e.no2_hourly_mean_ugm3,
+          e.pm25_hourly_mean_ugm3,
+          e.pm10_hourly_mean_ugm3,
+          e.pm25_rolling24h_mean_ugm3,
+          e.pm10_rolling24h_mean_ugm3,
           e.hourly_sample_count
         )
         is distinct from
         (
-          i.station_id,
-          i.connector_id,
-          i.pollutant_code,
-          i.daqi_input_value_ugm3,
-          i.daqi_input_averaging_code,
-          i.daqi_index_level,
-          i.daqi_source_observation_count,
-          i.daqi_required_observation_count,
-          i.daqi_calculation_status,
-          i.daqi_missing_reason,
-          i.eaqi_input_value_ugm3,
-          i.eaqi_input_averaging_code,
-          i.eaqi_index_level,
-          i.eaqi_source_observation_count,
-          i.eaqi_required_observation_count,
-          i.eaqi_calculation_status,
-          i.eaqi_missing_reason,
-          i.hourly_sample_count
+          c.station_id,
+          c.connector_id,
+          c.pollutant_code,
+          c.no2_hourly_mean_ugm3,
+          c.pm25_hourly_mean_ugm3,
+          c.pm10_hourly_mean_ugm3,
+          c.pm25_rolling24h_mean_ugm3,
+          c.pm10_rolling24h_mean_ugm3,
+          c.hourly_sample_count
         )
       )
   ),
@@ -3276,20 +3041,11 @@ begin
       connector_id,
       pollutant_code,
       timestamp_hour_utc,
-      daqi_input_value_ugm3,
-      daqi_input_averaging_code,
-      daqi_index_level,
-      daqi_source_observation_count,
-      daqi_required_observation_count,
-      daqi_calculation_status,
-      daqi_missing_reason,
-      eaqi_input_value_ugm3,
-      eaqi_input_averaging_code,
-      eaqi_index_level,
-      eaqi_source_observation_count,
-      eaqi_required_observation_count,
-      eaqi_calculation_status,
-      eaqi_missing_reason,
+      no2_hourly_mean_ugm3,
+      pm25_hourly_mean_ugm3,
+      pm10_hourly_mean_ugm3,
+      pm25_rolling24h_mean_ugm3,
+      pm10_rolling24h_mean_ugm3,
       hourly_sample_count,
       updated_at
     )
@@ -3299,20 +3055,11 @@ begin
       c.connector_id,
       c.pollutant_code,
       c.timestamp_hour_utc,
-      c.daqi_input_value_ugm3,
-      c.daqi_input_averaging_code,
-      c.daqi_index_level,
-      c.daqi_source_observation_count,
-      c.daqi_required_observation_count,
-      c.daqi_calculation_status,
-      c.daqi_missing_reason,
-      c.eaqi_input_value_ugm3,
-      c.eaqi_input_averaging_code,
-      c.eaqi_index_level,
-      c.eaqi_source_observation_count,
-      c.eaqi_required_observation_count,
-      c.eaqi_calculation_status,
-      c.eaqi_missing_reason,
+      c.no2_hourly_mean_ugm3,
+      c.pm25_hourly_mean_ugm3,
+      c.pm10_hourly_mean_ugm3,
+      c.pm25_rolling24h_mean_ugm3,
+      c.pm10_rolling24h_mean_ugm3,
       c.hourly_sample_count,
       now()
     from changed c
@@ -3321,20 +3068,11 @@ begin
       station_id = excluded.station_id,
       connector_id = excluded.connector_id,
       pollutant_code = excluded.pollutant_code,
-      daqi_input_value_ugm3 = excluded.daqi_input_value_ugm3,
-      daqi_input_averaging_code = excluded.daqi_input_averaging_code,
-      daqi_index_level = excluded.daqi_index_level,
-      daqi_source_observation_count = excluded.daqi_source_observation_count,
-      daqi_required_observation_count = excluded.daqi_required_observation_count,
-      daqi_calculation_status = excluded.daqi_calculation_status,
-      daqi_missing_reason = excluded.daqi_missing_reason,
-      eaqi_input_value_ugm3 = excluded.eaqi_input_value_ugm3,
-      eaqi_input_averaging_code = excluded.eaqi_input_averaging_code,
-      eaqi_index_level = excluded.eaqi_index_level,
-      eaqi_source_observation_count = excluded.eaqi_source_observation_count,
-      eaqi_required_observation_count = excluded.eaqi_required_observation_count,
-      eaqi_calculation_status = excluded.eaqi_calculation_status,
-      eaqi_missing_reason = excluded.eaqi_missing_reason,
+      no2_hourly_mean_ugm3 = excluded.no2_hourly_mean_ugm3,
+      pm25_hourly_mean_ugm3 = excluded.pm25_hourly_mean_ugm3,
+      pm10_hourly_mean_ugm3 = excluded.pm10_hourly_mean_ugm3,
+      pm25_rolling24h_mean_ugm3 = excluded.pm25_rolling24h_mean_ugm3,
+      pm10_rolling24h_mean_ugm3 = excluded.pm10_rolling24h_mean_ugm3,
       hourly_sample_count = excluded.hourly_sample_count,
       updated_at = now()
     where
@@ -3342,20 +3080,11 @@ begin
         uk_aq_aqilevels.timeseries_aqi_hourly_helper.station_id,
         uk_aq_aqilevels.timeseries_aqi_hourly_helper.connector_id,
         uk_aq_aqilevels.timeseries_aqi_hourly_helper.pollutant_code,
-        uk_aq_aqilevels.timeseries_aqi_hourly_helper.daqi_input_value_ugm3,
-        uk_aq_aqilevels.timeseries_aqi_hourly_helper.daqi_input_averaging_code,
-        uk_aq_aqilevels.timeseries_aqi_hourly_helper.daqi_index_level,
-        uk_aq_aqilevels.timeseries_aqi_hourly_helper.daqi_source_observation_count,
-        uk_aq_aqilevels.timeseries_aqi_hourly_helper.daqi_required_observation_count,
-        uk_aq_aqilevels.timeseries_aqi_hourly_helper.daqi_calculation_status,
-        uk_aq_aqilevels.timeseries_aqi_hourly_helper.daqi_missing_reason,
-        uk_aq_aqilevels.timeseries_aqi_hourly_helper.eaqi_input_value_ugm3,
-        uk_aq_aqilevels.timeseries_aqi_hourly_helper.eaqi_input_averaging_code,
-        uk_aq_aqilevels.timeseries_aqi_hourly_helper.eaqi_index_level,
-        uk_aq_aqilevels.timeseries_aqi_hourly_helper.eaqi_source_observation_count,
-        uk_aq_aqilevels.timeseries_aqi_hourly_helper.eaqi_required_observation_count,
-        uk_aq_aqilevels.timeseries_aqi_hourly_helper.eaqi_calculation_status,
-        uk_aq_aqilevels.timeseries_aqi_hourly_helper.eaqi_missing_reason,
+        uk_aq_aqilevels.timeseries_aqi_hourly_helper.no2_hourly_mean_ugm3,
+        uk_aq_aqilevels.timeseries_aqi_hourly_helper.pm25_hourly_mean_ugm3,
+        uk_aq_aqilevels.timeseries_aqi_hourly_helper.pm10_hourly_mean_ugm3,
+        uk_aq_aqilevels.timeseries_aqi_hourly_helper.pm25_rolling24h_mean_ugm3,
+        uk_aq_aqilevels.timeseries_aqi_hourly_helper.pm10_rolling24h_mean_ugm3,
         uk_aq_aqilevels.timeseries_aqi_hourly_helper.hourly_sample_count
       )
       is distinct from
@@ -3363,20 +3092,11 @@ begin
         excluded.station_id,
         excluded.connector_id,
         excluded.pollutant_code,
-        excluded.daqi_input_value_ugm3,
-        excluded.daqi_input_averaging_code,
-        excluded.daqi_index_level,
-        excluded.daqi_source_observation_count,
-        excluded.daqi_required_observation_count,
-        excluded.daqi_calculation_status,
-        excluded.daqi_missing_reason,
-        excluded.eaqi_input_value_ugm3,
-        excluded.eaqi_input_averaging_code,
-        excluded.eaqi_index_level,
-        excluded.eaqi_source_observation_count,
-        excluded.eaqi_required_observation_count,
-        excluded.eaqi_calculation_status,
-        excluded.eaqi_missing_reason,
+        excluded.no2_hourly_mean_ugm3,
+        excluded.pm25_hourly_mean_ugm3,
+        excluded.pm10_hourly_mean_ugm3,
+        excluded.pm25_rolling24h_mean_ugm3,
+        excluded.pm10_rolling24h_mean_ugm3,
         excluded.hourly_sample_count
       )
     returning
@@ -3428,20 +3148,11 @@ returns table (
   connector_id integer,
   pollutant_code text,
   timestamp_hour_utc timestamptz,
-  daqi_input_value_ugm3 double precision,
-  daqi_input_averaging_code text,
-  daqi_index_level smallint,
-  daqi_source_observation_count smallint,
-  daqi_required_observation_count smallint,
-  daqi_calculation_status text,
-  daqi_missing_reason text,
-  eaqi_input_value_ugm3 double precision,
-  eaqi_input_averaging_code text,
-  eaqi_index_level smallint,
-  eaqi_source_observation_count smallint,
-  eaqi_required_observation_count smallint,
-  eaqi_calculation_status text,
-  eaqi_missing_reason text,
+  no2_hourly_mean_ugm3 double precision,
+  pm25_hourly_mean_ugm3 double precision,
+  pm10_hourly_mean_ugm3 double precision,
+  pm25_rolling24h_mean_ugm3 double precision,
+  pm10_rolling24h_mean_ugm3 double precision,
   hourly_sample_count smallint
 )
 language plpgsql
@@ -3473,20 +3184,11 @@ begin
     h.connector_id,
     h.pollutant_code,
     h.timestamp_hour_utc,
-    h.daqi_input_value_ugm3,
-    h.daqi_input_averaging_code,
-    h.daqi_index_level,
-    h.daqi_source_observation_count,
-    h.daqi_required_observation_count,
-    h.daqi_calculation_status,
-    h.daqi_missing_reason,
-    h.eaqi_input_value_ugm3,
-    h.eaqi_input_averaging_code,
-    h.eaqi_index_level,
-    h.eaqi_source_observation_count,
-    h.eaqi_required_observation_count,
-    h.eaqi_calculation_status,
-    h.eaqi_missing_reason,
+    h.no2_hourly_mean_ugm3,
+    h.pm25_hourly_mean_ugm3,
+    h.pm10_hourly_mean_ugm3,
+    h.pm25_rolling24h_mean_ugm3,
+    h.pm10_rolling24h_mean_ugm3,
     h.hourly_sample_count
   from uk_aq_aqilevels.timeseries_aqi_hourly_helper h
   where h.timestamp_hour_utc > (v_start_exclusive - interval '1 hour')

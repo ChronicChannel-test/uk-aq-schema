@@ -287,47 +287,15 @@ create table if not exists uk_aq_aqilevels.timeseries_aqi_hourly_helper (
   connector_id integer not null references uk_aq_core.connectors(id) on delete cascade,
   pollutant_code text not null check (pollutant_code in ('pm25', 'pm10', 'no2')),
   timestamp_hour_utc timestamptz not null,
-  daqi_input_value_ugm3 double precision,
-  daqi_input_averaging_code text,
-  daqi_index_level smallint,
-  daqi_source_observation_count smallint,
-  daqi_required_observation_count smallint,
-  daqi_calculation_status text,
-  daqi_missing_reason text,
-  eaqi_input_value_ugm3 double precision,
-  eaqi_input_averaging_code text,
-  eaqi_index_level smallint,
-  eaqi_source_observation_count smallint,
-  eaqi_required_observation_count smallint,
-  eaqi_calculation_status text,
-  eaqi_missing_reason text,
+  no2_hourly_mean_ugm3 double precision,
+  pm25_hourly_mean_ugm3 double precision,
+  pm10_hourly_mean_ugm3 double precision,
+  pm25_rolling24h_mean_ugm3 double precision,
+  pm10_rolling24h_mean_ugm3 double precision,
   hourly_sample_count smallint,
   updated_at timestamptz not null default now(),
   primary key (timeseries_id, timestamp_hour_utc)
 );
-
-alter table if exists uk_aq_aqilevels.timeseries_aqi_hourly_helper
-  add column if not exists daqi_input_value_ugm3 double precision,
-  add column if not exists daqi_input_averaging_code text,
-  add column if not exists daqi_index_level smallint,
-  add column if not exists daqi_source_observation_count smallint,
-  add column if not exists daqi_required_observation_count smallint,
-  add column if not exists daqi_calculation_status text,
-  add column if not exists daqi_missing_reason text,
-  add column if not exists eaqi_input_value_ugm3 double precision,
-  add column if not exists eaqi_input_averaging_code text,
-  add column if not exists eaqi_index_level smallint,
-  add column if not exists eaqi_source_observation_count smallint,
-  add column if not exists eaqi_required_observation_count smallint,
-  add column if not exists eaqi_calculation_status text,
-  add column if not exists eaqi_missing_reason text;
-
-alter table if exists uk_aq_aqilevels.timeseries_aqi_hourly_helper
-  drop column if exists no2_hourly_mean_ugm3,
-  drop column if exists pm25_hourly_mean_ugm3,
-  drop column if exists pm10_hourly_mean_ugm3,
-  drop column if exists pm25_rolling24h_mean_ugm3,
-  drop column if exists pm10_rolling24h_mean_ugm3;
 
 create index if not exists timeseries_aqi_hourly_helper_hour_idx
   on uk_aq_aqilevels.timeseries_aqi_hourly_helper (timestamp_hour_utc desc);

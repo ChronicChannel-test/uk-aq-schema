@@ -8,17 +8,24 @@ Timeseries-hour AQI fact table in ObsAQIDB.
 - connector_id: FK to `uk_aq_core.connectors.id`.
 - pollutant_code: `pm25`, `pm10`, or `no2`.
 - timestamp_hour_utc: UTC hour bucket.
-- `*_hourly_mean_ugm3`: Pollutant hourly means used in index calculations.
-- `pm25_rolling24h_mean_ugm3`, `pm10_rolling24h_mean_ugm3`: Rolling 24-hour means used for DAQI PM levels.
+- `daqi_input_value_ugm3`, `daqi_input_averaging_code`: Normalized DAQI input value and averaging code.
+- `daqi_index_level`, `daqi_source_observation_count`, `daqi_required_observation_count`, `daqi_calculation_status`, `daqi_missing_reason`: Normalized DAQI output metadata.
+- `eaqi_input_value_ugm3`, `eaqi_input_averaging_code`: Normalized EAQI input value and averaging code.
+- `eaqi_index_level`, `eaqi_source_observation_count`, `eaqi_required_observation_count`, `eaqi_calculation_status`, `eaqi_missing_reason`: Normalized EAQI output metadata.
 - hourly_sample_count: Hourly sample count for this timeseries + pollutant row.
-- `daqi_no2_index_level`: DAQI level from NO2 hourly mean.
-- `daqi_pm25_rolling24h_index_level`, `daqi_pm10_rolling24h_index_level`: DAQI levels from PM rolling 24-hour means.
-- `eaqi_no2_index_level`, `eaqi_pm25_index_level`, `eaqi_pm10_index_level`: Pollutant-specific EAQI levels from hourly means.
-- created_at, updated_at: Audit timestamps.
+- algorithm_version, computed_at_utc: Compute metadata for the normalized hourly row.
+- Legacy compatibility columns are still exposed in the public view for the transition period:
+  - `hourly_mean_ugm3`, `rolling24h_mean_ugm3`
+  - `no2_hourly_mean_ugm3`, `pm25_hourly_mean_ugm3`, `pm10_hourly_mean_ugm3`
+  - `pm25_rolling24h_mean_ugm3`, `pm10_rolling24h_mean_ugm3`
+  - `daqi_no2_index_level`, `daqi_pm25_rolling24h_index_level`, `daqi_pm10_rolling24h_index_level`
+  - `eaqi_no2_index_level`, `eaqi_pm25_index_level`, `eaqi_pm10_index_level`
+  - `updated_at`
 
 ## Notes
 - Primary key is `(timeseries_id, timestamp_hour_utc)`.
 - Rows are upserted idempotently from Cloud Run AQI worker.
+- The canonical public read contract is `uk_aq_public.uk_aq_timeseries_aqi_hourly`, which preserves the legacy column prefix for compatibility and appends the normalized DAQI/EAQI fields after `updated_at`.
 - AQI lookup uses continuous upper-bound threshold matching, so decimal concentrations between published integer legend thresholds do not create gaps.
 - PM2.5 examples:
   - EAQI hourly: `Good <=5`, `Fair >5 to <=15`, `Moderate >15 to <=50`, `Poor >50 to <=90`, `Very poor >90 to <=140`, `Extremely poor >140`
