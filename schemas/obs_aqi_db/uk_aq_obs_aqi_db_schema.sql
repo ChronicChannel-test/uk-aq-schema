@@ -3913,6 +3913,8 @@ declare
   v_max_changed_lag_hours numeric := null;
   v_reference_effective_date date := null;
 begin
+  set local statement_timeout = '15min';
+
   if auth.role() <> 'service_role' then
     raise exception 'service_role required';
   end if;

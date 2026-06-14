@@ -2945,6 +2945,8 @@ declare
   v_timeseries_hours_changed integer := 0;
   v_max_changed_lag_hours numeric := null;
 begin
+  set local statement_timeout = '15min';
+
   if auth.role() <> 'service_role' then
     raise exception 'service_role required';
   end if;

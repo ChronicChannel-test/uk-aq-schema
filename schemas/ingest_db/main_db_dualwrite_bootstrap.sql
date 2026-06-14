@@ -593,6 +593,52 @@ as $$
   order by o.timeseries_id asc, o.observed_at asc
 $$;
 
+create or replace function uk_aq_ops.uk_aq_phase_b_history_rows_v2(
+  p_connector_id integer,
+  p_day_start timestamptz,
+  p_day_end timestamptz,
+  p_after_timeseries_id integer default null,
+  p_after_observed_at timestamptz default null
+)
+returns table (
+  connector_id integer,
+  station_id bigint,
+  timeseries_id integer,
+  pollutant_code text,
+  observed_at_utc timestamptz,
+  value double precision
+)
+language sql
+stable
+set search_path = uk_aq_core, uk_aq_ops, public, pg_catalog
+as $$
+  select
+    o.connector_id,
+    ts.station_id,
+    o.timeseries_id,
+    op.code as pollutant_code,
+    o.observed_at as observed_at_utc,
+    o.value
+  from uk_aq_core.observations o
+  join uk_aq_core.timeseries ts
+    on ts.id = o.timeseries_id
+   and ts.connector_id = o.connector_id
+  join uk_aq_core.phenomena p
+    on p.id = ts.phenomenon_id
+  join uk_aq_core.observed_properties op
+    on op.id = p.observed_property_id
+  where o.connector_id = p_connector_id
+    and o.observed_at >= p_day_start
+    and o.observed_at < p_day_end
+    and op.code is not null
+    and (
+      p_after_timeseries_id is null
+      or p_after_observed_at is null
+      or (o.timeseries_id, o.observed_at) > (p_after_timeseries_id, p_after_observed_at)
+    )
+  order by o.timeseries_id asc, o.observed_at asc
+$$;
+
 grant usage on schema uk_aq_ops to service_role;
 grant all on all tables in schema uk_aq_ops to service_role;
 grant execute on all functions in schema uk_aq_ops to service_role;
