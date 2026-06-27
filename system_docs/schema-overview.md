@@ -26,7 +26,8 @@ This document summarizes the schema defined in `schemas/uk_air_quality_schema.sq
 - `uk_air_sos_site_register`: snapshot of the UK-AIR monitoring sites CSV, including UK-AIR IDs, coordinates, networks array, and raw payload for audit.
 - `laqn_site_register`: snapshot of the LAQN site list (e.g., LondonAir or ERG API), including LAQN site refs, coordinates, network flags, and raw payload for audit.
 - `uk_air_sos_station_refs`: mapping of SOS `stations` to UK-AIR site ids (`uk_air_id`) with match metadata for membership backfills.
-- `breathelondon_timeseries_checkpoints`: per-site/species checkpoints for staged Breathe London data pulls.
+- `blondon_communities_station_checkpoints`: per-station scheduling state for Breathe London Communities.
+- `blondon_communities_timeseries_checkpoints`: per-site/species checkpoints for staged Breathe London Communities data pulls.
 - `erg_laqn_station_checkpoints`: per-station checkpoints for ERG LAQN batch polling.
 - `uk_aq_ingest_runs`: per-run ingest summaries captured by the dispatcher (status + counts + last_observed_at).
 - `dispatcher_settings`: dispatcher toggles (parallel ingest + max runs per call).

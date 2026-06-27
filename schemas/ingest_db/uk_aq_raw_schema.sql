@@ -86,7 +86,22 @@ create index if not exists uk_air_sos_station_refs_snapshot_idx
   on uk_air_sos_station_refs(source_snapshot_at);
 
 
-create table if not exists breathelondon_station_checkpoints (
+create table if not exists blondon_communities_timeseries_checkpoints (
+  station_id bigint not null references stations(id) on delete cascade,
+  species text not null,
+  timeseries_id bigint references timeseries(id) on delete set null,
+  last_observed_at timestamptz,
+  last_polled_at timestamptz,
+  last_error text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  primary key (station_id, species)
+);
+
+create index if not exists blondon_communities_timeseries_checkpoints_last_obs_idx
+  on blondon_communities_timeseries_checkpoints(last_observed_at);
+
+create table if not exists blondon_communities_station_checkpoints (
   station_id bigint primary key references stations(id) on delete cascade,
   next_due_at timestamptz,
   last_observed_at timestamptz,
@@ -96,10 +111,10 @@ create table if not exists breathelondon_station_checkpoints (
   updated_at timestamptz default now()
 );
 
-create index if not exists breathelondon_station_checkpoints_next_due_at_idx
-  on breathelondon_station_checkpoints(next_due_at);
-create index if not exists breathelondon_station_checkpoints_last_polled_at_idx
-  on breathelondon_station_checkpoints(last_polled_at);
+create index if not exists blondon_communities_station_checkpoints_next_due_at_idx
+  on blondon_communities_station_checkpoints(next_due_at);
+create index if not exists blondon_communities_station_checkpoints_last_polled_at_idx
+  on blondon_communities_station_checkpoints(last_polled_at);
 
 create table if not exists erg_laqn_station_checkpoints (
   station_id bigint primary key references stations(id) on delete cascade,
@@ -227,7 +242,7 @@ declare
   t text;
 begin
   for t in
-    select unnest(ARRAY['uk_air_sos_site_register','laqn_site_register','uk_air_sos_station_refs','breathelondon_station_checkpoints','erg_laqn_station_checkpoints','uk_air_sos_timeseries_checkpoints','uk_air_sos_station_checkpoints','openaq_station_checkpoints','openaq_timeseries_checkpoints','openaq_request_budget_minute','observation_rpc_metrics_minute','error_logs']::text[])
+    select unnest(ARRAY['uk_air_sos_site_register','laqn_site_register','uk_air_sos_station_refs','blondon_communities_station_checkpoints','blondon_communities_timeseries_checkpoints','erg_laqn_station_checkpoints','uk_air_sos_timeseries_checkpoints','uk_air_sos_station_checkpoints','openaq_station_checkpoints','openaq_timeseries_checkpoints','openaq_request_budget_minute','observation_rpc_metrics_minute','error_logs']::text[])
   loop
     execute format('alter table uk_aq_raw.%I enable row level security', t);
     if not exists (

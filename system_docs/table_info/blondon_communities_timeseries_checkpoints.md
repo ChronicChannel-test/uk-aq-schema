@@ -1,6 +1,6 @@
-# breathelondon_timeseries_checkpoints
+# blondon_communities_timeseries_checkpoints
 
-Checkpoint table for staged Breathe London data pulls.
+Checkpoint table for staged Breathe London Communities data pulls.
 
 Columns:
 - station_id: FK to `stations.id`.
@@ -13,3 +13,7 @@ Columns:
 
 Indexes:
 - Index on `last_observed_at` for auditing lagging checkpoints.
+
+Identity:
+- This is connector-specific state for `connector_code = 'blondon_communities'`.
+- Public `network_code` and shared `service_ref` remain `breathelondon`.

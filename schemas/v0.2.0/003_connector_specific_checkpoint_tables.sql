@@ -1,16 +1,37 @@
--- UK AQ v0.2.0 connector-specific checkpoint schema placeholder.
+-- UK AQ v0.2.0 connector-specific checkpoint tables.
 --
--- v0.2.0 deliberately does not introduce a generic connector_checkpoints
--- table. Existing connector/network-specific checkpoint tables remain in
--- uk_aq_raw during the additive TEST migration.
---
--- Retained for dependency analysis:
--- - breathelondon_station_checkpoints
--- - erg_laqn_station_checkpoints
--- - uk_air_sos_station_checkpoints
--- - uk_air_sos_timeseries_checkpoints
--- - openaq_station_checkpoints
--- - openaq_timeseries_checkpoints
---
--- TODO(v0.2.0): decide whether Breathe London Communities and Nodes require
--- separate checkpoint tables after their ingest implementations are reviewed.
+-- Connector-specific names keep the Communities and future Nodes ingest
+-- state independent while both remain part of the Breathe London service.
+
+create schema if not exists uk_aq_raw;
+set search_path = uk_aq_raw, uk_aq_core, public;
+
+create table if not exists blondon_communities_timeseries_checkpoints (
+  station_id bigint not null references stations(id) on delete cascade,
+  species text not null,
+  timeseries_id bigint references timeseries(id) on delete set null,
+  last_observed_at timestamptz,
+  last_polled_at timestamptz,
+  last_error text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  primary key (station_id, species)
+);
+
+create index if not exists blondon_communities_timeseries_checkpoints_last_obs_idx
+  on blondon_communities_timeseries_checkpoints(last_observed_at);
+
+create table if not exists blondon_communities_station_checkpoints (
+  station_id bigint primary key references stations(id) on delete cascade,
+  next_due_at timestamptz,
+  last_observed_at timestamptz,
+  ingest_lag_samples int[] not null default '{}'::int[],
+  last_polled_at timestamptz,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create index if not exists blondon_communities_station_checkpoints_next_due_at_idx
+  on blondon_communities_station_checkpoints(next_due_at);
+create index if not exists blondon_communities_station_checkpoints_last_polled_at_idx
+  on blondon_communities_station_checkpoints(last_polled_at);
