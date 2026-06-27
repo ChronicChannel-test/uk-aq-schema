@@ -1,0 +1,11 @@
+-- UK AQ v0.2.0 AQI-level schema placeholder.
+--
+-- Dependency analysis is required before the current AQI helper objects are
+-- restated against direct timeseries.observed_property_id relationships.
+-- Until then, the active canonical source remains:
+--   schemas/ingest_db/uk_aq_aqilevels_schema.sql
+--
+-- TODO(v0.2.0):
+-- 1. Remove phenomena-dependent joins.
+-- 2. Confirm helper-table and RPC dependencies on connector_id.
+-- 3. Restate AQI objects here only after TEST dependency analysis.

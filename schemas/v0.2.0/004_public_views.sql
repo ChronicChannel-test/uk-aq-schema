@@ -1,0 +1,9 @@
+-- UK AQ v0.2.0 public views placeholder.
+--
+-- Canonical projections are pending dependency-led implementation.
+-- Dependency analysis must cover website, dashboard, R2 snapshot, AQI, and
+-- ingest consumers before these clean-bootstrap projections are authored.
+--
+-- Intended v0.2.0 projections will expose networks, stations,
+-- station_initial_metadata, observed_properties, timeseries, observations,
+-- and uk_aq_ingest_runs without legacy phenomena or membership surfaces.

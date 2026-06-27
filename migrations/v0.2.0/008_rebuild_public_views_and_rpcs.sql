@@ -1,0 +1,15 @@
+-- UK AQ v0.2.0 public view/RPC migration placeholder.
+--
+-- Intentionally no DDL in the first additive TEST draft.
+--
+-- Before replacing public views or RPCs, inventory dependencies in:
+-- - schemas/ingest_db/uk_aq_public_views.sql
+-- - schemas/ingest_db/uk_aq_rpc.sql
+-- - schemas/ingest_db/uk_aq_aqilevels_schema.sql
+-- - website latest/history queries
+-- - ingest upsert and lookup RPC callers
+-- - R2 latest snapshot and history builders
+--
+-- Do not drop legacy station_metadata, phenomena,
+-- station_network_memberships, uk_aq_networks, connector_id on observations,
+-- or any dependent view/function in this phase.

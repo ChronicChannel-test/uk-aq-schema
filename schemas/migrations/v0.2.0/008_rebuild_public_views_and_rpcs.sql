@@ -1,0 +1,14 @@
+-- UK AQ v0.2.0 public view/RPC migration placeholder.
+--
+-- Intentionally no DDL in this schema-table migration draft.
+--
+-- Before replacing public views or RPCs, inventory dependencies in:
+-- - schemas/ingest_db/uk_aq_public_views.sql
+-- - schemas/ingest_db/uk_aq_rpc.sql
+-- - schemas/ingest_db/uk_aq_aqilevels_schema.sql
+-- - website latest/history queries
+-- - ingest upsert and lookup RPC callers
+-- - R2 latest snapshot and history builders
+--
+-- Phase 1 leaves all existing views and RPCs operational. Update and deploy
+-- their v0.2.0 replacements before enabling any 900-series migration.

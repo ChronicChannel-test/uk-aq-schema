@@ -1,0 +1,16 @@
+-- UK AQ v0.2.0 connector-specific checkpoint schema placeholder.
+--
+-- v0.2.0 deliberately does not introduce a generic connector_checkpoints
+-- table. Existing connector/network-specific checkpoint tables remain in
+-- uk_aq_raw during the additive TEST migration.
+--
+-- Retained for dependency analysis:
+-- - breathelondon_station_checkpoints
+-- - erg_laqn_station_checkpoints
+-- - uk_air_sos_station_checkpoints
+-- - uk_air_sos_timeseries_checkpoints
+-- - openaq_station_checkpoints
+-- - openaq_timeseries_checkpoints
+--
+-- TODO(v0.2.0): decide whether Breathe London Communities and Nodes require
+-- separate checkpoint tables after their ingest implementations are reviewed.

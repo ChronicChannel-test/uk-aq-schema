@@ -1,0 +1,6 @@
+-- UK AQ v0.2.0 RPC placeholder.
+--
+-- Canonical RPCs are pending dependency-led implementation.
+-- Their references to phenomena, connector-scoped observation keys,
+-- station_metadata, station_network_memberships, and uk_aq_networks must be
+-- inventoried before hard-cut replacements are written.
