@@ -202,7 +202,8 @@ Creates/adds objects without dropping old dependencies.
 
 Completed:
 
-- [X] Ran `002_add_v020_core_tables_and_columns.sql`.
+- [X] Ran on ingestdb `002_add_v020_core_tables_and_columns.sql`.
+- [X] Ran on obsaqidb `002_add_v020_core_tables_and_columns.sql`.
 - [X] Confirmed no errors.
 
 Notes/output summary:

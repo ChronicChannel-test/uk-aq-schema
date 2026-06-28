@@ -35,3 +35,21 @@ create index if not exists blondon_communities_station_checkpoints_next_due_at_i
   on blondon_communities_station_checkpoints(next_due_at);
 create index if not exists blondon_communities_station_checkpoints_last_polled_at_idx
   on blondon_communities_station_checkpoints(last_polled_at);
+
+create table if not exists blondon_nodes_station_checkpoints (
+  station_id bigint primary key references stations(id) on delete cascade,
+  next_due_at timestamptz,
+  last_observed_at timestamptz,
+  ingest_lag_samples integer[] not null default '{}'::integer[],
+  last_polled_at timestamptz,
+  last_error text,
+  species_last_observed_at jsonb not null default '{}'::jsonb,
+  species_last_error jsonb not null default '{}'::jsonb,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create index if not exists blondon_nodes_station_checkpoints_next_due_at_idx
+  on blondon_nodes_station_checkpoints(next_due_at);
+create index if not exists blondon_nodes_station_checkpoints_last_polled_at_idx
+  on blondon_nodes_station_checkpoints(last_polled_at);
