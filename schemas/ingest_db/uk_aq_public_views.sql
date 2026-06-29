@@ -26,6 +26,17 @@ select
   scheduler_backend
 from uk_aq_core.connectors;
 
+create or replace view networks as
+select
+  n.id as network_id,
+  n.network_code,
+  n.display_name as network_label,
+  n.network_type,
+  n.public_display_enabled,
+  n.default_priority
+from uk_aq_core.networks n
+where n.public_display_enabled is true;
+
 create or replace view categories as
 select id, category_ref, label, connector_id
 from uk_aq_core.categories;
@@ -65,28 +76,38 @@ create or replace view procedures as
 select id, procedure_ref, label, raw_formats, service_ref, connector_id
 from uk_aq_core.procedures;
 
-create or replace view stations as
+drop view if exists stations;
+create view stations as
 select
-  id,
-  station_ref,
-  service_ref,
-  label,
-  station_name,
-  station_type,
-  station_exposure,
-  region,
-  la_code,
-  la_version,
-  pcon_code,
-  pcon_version,
-  geometry,
-  connector_id,
-  category_id,
-  first_seen_at,
-  last_seen_at,
-  removed_at,
-  created_at
-from uk_aq_core.stations;
+  s.id,
+  s.station_ref,
+  s.service_ref,
+  s.label,
+  s.station_name,
+  s.station_type,
+  s.station_exposure,
+  s.region,
+  s.la_code,
+  s.la_version,
+  s.pcon_code,
+  s.pcon_version,
+  s.geometry,
+  s.connector_id,
+  s.first_seen_at,
+  s.last_seen_at,
+  s.removed_at,
+  s.created_at,
+  s.network_id,
+  n.network_code,
+  n.display_name as network_label,
+  c.connector_code,
+  coalesce(c.display_name, c.label) as connector_label
+from uk_aq_core.stations s
+join uk_aq_core.networks n
+  on n.id = s.network_id
+ and n.public_display_enabled is true
+join uk_aq_core.connectors c
+  on c.id = s.connector_id;
 
 create or replace view station_metadata as
 select station_id, attributes, created_at, updated_at
@@ -95,10 +116,6 @@ from uk_aq_core.station_metadata;
 create or replace view station_network_memberships as
 select station_id, network_code, network_label, is_primary, created_at
 from uk_aq_core.station_network_memberships;
-
-create or replace view uk_aq_networks as
-select id, network_code, display_name, connector_code, is_active, created_at
-from uk_aq_core.uk_aq_networks;
 
 create or replace view uk_air_sos_networks as
 select network_ref, network_code, network_display_name, created_at, updated_at
@@ -245,18 +262,14 @@ left join uk_aq_core.pollutant_thresholds th
 -- Local authority latest PM2.5 (median + mean)
 create or replace view uk_aq_station_lat_lon as
 select
-  coalesce(n.network_display_name, snm.network_label, c.display_name, c.label) as network,
+  n.display_name as network,
   st.label as station_label,
   st.station_ref,
   concat_ws(' ', st_y(st.geometry::geometry), st_x(st.geometry::geometry)) as lat_lon
 from uk_aq_core.stations st
-left join uk_aq_core.station_network_memberships snm
-  on snm.station_id = st.id
-  and snm.is_primary is true
-left join uk_aq_core.uk_air_sos_networks n
-  on n.network_code = snm.network_code
-left join uk_aq_core.connectors c
-  on c.id = st.connector_id
+join uk_aq_core.networks n
+  on n.id = st.network_id
+ and n.public_display_enabled is true
 where st.geometry is not null;
 
 create or replace view uk_aq_observation_rpc_metrics_minute as
@@ -296,6 +309,7 @@ select
 from uk_aq_ops.r2_domain_size_metrics_hourly;
 
 alter view if exists connectors set (security_invoker = true);
+alter view if exists networks set (security_invoker = true);
 alter view if exists categories set (security_invoker = true);
 alter view if exists phenomena set (security_invoker = true);
 alter view if exists observed_properties set (security_invoker = true);
@@ -305,7 +319,6 @@ alter view if exists procedures set (security_invoker = true);
 alter view if exists stations set (security_invoker = true);
 alter view if exists station_metadata set (security_invoker = true);
 alter view if exists station_network_memberships set (security_invoker = true);
-alter view if exists uk_aq_networks set (security_invoker = true);
 alter view if exists uk_air_sos_networks set (security_invoker = true);
 alter view if exists uk_air_sos_network_pollutants set (security_invoker = true);
 alter view if exists uk_aq_guidelines set (security_invoker = true);

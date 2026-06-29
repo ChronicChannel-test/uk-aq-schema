@@ -1,22 +1,29 @@
--- uk_aq_la_hex RPC for read-only access (Edge function backing).
+-- uk_aq_la_hex RPC for read-only, network-resolved access.
 create schema if not exists uk_aq_public;
 
-drop function if exists uk_aq_public.uk_aq_la_hex_rpc(
-  text[],
-  text,
-  int
-);
+do $$
+declare
+  v_fn record;
+begin
+  for v_fn in
+    select pg_get_function_identity_arguments(p.oid) as identity_args
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'uk_aq_public'
+      and p.proname = 'uk_aq_la_hex_rpc'
+  loop
+    execute format(
+      'drop function if exists uk_aq_public.uk_aq_la_hex_rpc(%s)',
+      v_fn.identity_args
+    );
+  end loop;
+end
+$$;
 
-drop function if exists uk_aq_public.uk_aq_la_hex_rpc(
-  text[],
-  text,
-  int,
-  timestamptz
-);
-
-create or replace function uk_aq_public.uk_aq_la_hex_rpc(
+create function uk_aq_public.uk_aq_la_hex_rpc(
   region text[] default null,
   la_version text default null,
+  network_code text default null,
   limit_rows int default 1000,
   since_ts timestamptz default null
 )
@@ -24,6 +31,9 @@ returns table (
   la_code text,
   la_name text,
   la_version text,
+  network_id bigint,
+  network_code text,
+  network_label text,
   station_count int,
   single_site boolean,
   median_value double precision,
@@ -38,12 +48,16 @@ as $$
     select
       region as region_codes,
       nullif(trim(la_version), '') as la_version,
+      nullif(trim(network_code), '') as network_code,
       least(10000, greatest(1, coalesce(limit_rows, 1000)))::int as limit_rows,
       since_ts as since_ts
   ),
   pm25_candidates as (
     select
       ts.station_id,
+      n.id as network_id,
+      n.network_code,
+      n.display_name as network_label,
       ts.last_value,
       ts.last_value_at,
       row_number() over (
@@ -51,12 +65,17 @@ as $$
         order by ts.last_value_at desc nulls last
       ) as rn
     from timeseries ts
+    join stations stn on stn.id = ts.station_id
+    join networks n
+      on n.id = stn.network_id
+     and n.public_display_enabled = true
     join phenomena phen on phen.id = ts.phenomenon_id
     left join observed_properties op on op.id = phen.observed_property_id
-    where ts.station_id is not null
-      and ts.last_value is not null
+    cross join params
+    where ts.last_value is not null
       and ts.last_value_at is not null
       and ts.last_value >= 0
+      and (params.network_code is null or n.network_code = params.network_code)
       and (
         op.code = 'pm25'
         or (
@@ -72,6 +91,9 @@ as $$
     select
       stn.la_code,
       stn.la_version,
+      pm.network_id,
+      pm.network_code,
+      pm.network_label,
       pm.last_value,
       pm.last_value_at
     from pm25_candidates pm
@@ -83,17 +105,28 @@ as $$
     select
       la_code,
       la_version,
+      network_id,
+      network_code,
+      network_label,
       count(*)::int as station_count,
       percentile_cont(0.5) within group (order by last_value) as median_value,
       avg(last_value) as mean_value,
       max(last_value_at) as latest_value_at
     from pm25_latest
-    group by la_code, la_version
+    group by
+      la_code,
+      la_version,
+      network_id,
+      network_code,
+      network_label
   )
   select
     l.la_code,
     gc.name as la_name,
     l.la_version,
+    l.network_id,
+    l.network_code,
+    l.network_label,
     l.station_count,
     (l.station_count = 1) as single_site,
     l.median_value,
@@ -106,22 +139,17 @@ as $$
   where (params.la_version is null or l.la_version = params.la_version)
     and (params.region_codes is null or l.la_code = any(params.region_codes))
     and (params.since_ts is null or l.latest_value_at > params.since_ts)
+  order by l.la_code, l.network_code
   limit (select limit_rows from params);
 $$;
 
 grant execute on function uk_aq_public.uk_aq_la_hex_rpc(
   text[],
   text,
-  int,
-  timestamptz
-) to anon, authenticated;
-
-grant execute on function uk_aq_public.uk_aq_la_hex_rpc(
-  text[],
   text,
   int,
   timestamptz
-) to service_role;
+) to anon, authenticated, service_role;
 -- uk_aq_latest RPC for read-only access (Edge function backing).
 
 do $$
@@ -185,11 +213,11 @@ drop function if exists uk_aq_public.uk_aq_latest_rpc(
   timestamptz
 );
 
-create or replace function uk_aq_public.uk_aq_latest_rpc(
+create function uk_aq_public.uk_aq_latest_rpc(
   region text default null,
   pcon_code text default null,
   station_like text default null,
-  connector_id integer default null,
+  network_code text default null,
   pollutant text default null,
   limit_rows int default 1000,
   window_label text default null,
@@ -205,7 +233,12 @@ returns table (
   uom text,
   last_value double precision,
   last_value_at timestamptz,
+  network_id bigint,
+  network_code text,
+  network_label text,
   connector_id integer,
+  connector_code text,
+  connector_label text,
   connector jsonb,
   station jsonb,
   phenomenon jsonb
@@ -219,7 +252,7 @@ as $$
       nullif(trim(region), '') as region,
       nullif(trim(pcon_code), '') as pcon_code,
       nullif(trim(station_like), '') as station_like,
-      connector_id as connector_id,
+      nullif(trim(network_code), '') as network_code,
       nullif(trim(pollutant), '') as pollutant,
       least(10000, greatest(1, coalesce(limit_rows, 1000)))::int as limit_rows,
       since_ts as since_ts,
@@ -261,7 +294,12 @@ as $$
       ts.uom,
       ts.last_value,
       ts.last_value_at,
+      n.id as network_id,
+      n.network_code,
+      n.display_name as network_label,
       ts.connector_id,
+      c.connector_code,
+      c.display_name as connector_label,
       case
         when c.id is null then null
         else jsonb_build_object(
@@ -284,8 +322,7 @@ as $$
           'la_version', s.la_version,
           'pcon_code', s.pcon_code,
           'pcon_version', s.pcon_version,
-          'connector_id', s.connector_id,
-          'station_network_memberships', coalesce(memberships.memberships, '[]'::jsonb)
+          'connector_id', s.connector_id
         )
       end as station,
       case
@@ -307,30 +344,18 @@ as $$
       s.label as station_label,
       s.station_name as station_name
     from uk_aq_core.timeseries ts
+    join uk_aq_core.stations s on s.id = ts.station_id
+    join uk_aq_core.networks n
+      on n.id = s.network_id
+     and n.public_display_enabled = true
     left join uk_aq_core.connectors c on c.id = ts.connector_id
-    left join uk_aq_core.stations s on s.id = ts.station_id
     left join uk_aq_core.phenomena p on p.id = ts.phenomenon_id
     left join uk_aq_core.observed_properties op on op.id = p.observed_property_id
-    left join lateral (
-      select coalesce(
-        jsonb_agg(
-          jsonb_build_object(
-            'network_code', snm.network_code,
-            'network_label', snm.network_label,
-            'is_primary', snm.is_primary
-          )
-          order by snm.network_code
-        ),
-        '[]'::jsonb
-      ) as memberships
-      from uk_aq_core.station_network_memberships snm
-      where snm.station_id = s.id
-    ) memberships on true
     cross join params
     cross join pollutant_tokens pt
     where ts.last_value >= 0
       and ts.last_value_at is not null
-      and (params.connector_id is null or ts.connector_id = params.connector_id)
+      and (params.network_code is null or n.network_code = params.network_code)
       and (params.region is null or s.region ilike '%' || params.region || '%')
       and (params.pcon_code is null or s.pcon_code = params.pcon_code)
       and (
@@ -403,7 +428,12 @@ as $$
     uom,
     last_value,
     last_value_at,
+    network_id,
+    network_code,
+    network_label,
     connector_id,
+    connector_code,
+    connector_label,
     connector,
     station,
     phenomenon
@@ -416,7 +446,7 @@ grant execute on function uk_aq_public.uk_aq_latest_rpc(
   text,
   text,
   text,
-  integer,
+  text,
   text,
   int,
   text,
@@ -429,7 +459,7 @@ grant execute on function uk_aq_public.uk_aq_latest_rpc(
   text,
   text,
   text,
-  integer,
+  text,
   text,
   int,
   text,
@@ -640,19 +670,28 @@ grant execute on function uk_aq_public.uk_aq_timeseries_rpc(
 
 -- uk_aq_pcon_hex RPC for read-only access (Edge function backing).
 
-drop function if exists uk_aq_public.uk_aq_pcon_hex_rpc(
-  text,
-  int
-);
+do $$
+declare
+  v_fn record;
+begin
+  for v_fn in
+    select pg_get_function_identity_arguments(p.oid) as identity_args
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'uk_aq_public'
+      and p.proname = 'uk_aq_pcon_hex_rpc'
+  loop
+    execute format(
+      'drop function if exists uk_aq_public.uk_aq_pcon_hex_rpc(%s)',
+      v_fn.identity_args
+    );
+  end loop;
+end
+$$;
 
-drop function if exists uk_aq_public.uk_aq_pcon_hex_rpc(
-  text,
-  int,
-  timestamptz
-);
-
-create or replace function uk_aq_public.uk_aq_pcon_hex_rpc(
+create function uk_aq_public.uk_aq_pcon_hex_rpc(
   pcon_version text default null,
+  network_code text default null,
   limit_rows int default 1000,
   since_ts timestamptz default null
 )
@@ -660,6 +699,9 @@ returns table (
   pcon_code text,
   pcon_name text,
   pcon_version text,
+  network_id bigint,
+  network_code text,
+  network_label text,
   station_count int,
   single_site boolean,
   median_value double precision,
@@ -673,12 +715,16 @@ as $$
   with params as (
     select
       nullif(trim(pcon_version), '') as pcon_version,
+      nullif(trim(network_code), '') as network_code,
       least(10000, greatest(1, coalesce(limit_rows, 1000)))::int as limit_rows,
       since_ts as since_ts
   ),
   pm25_candidates as (
     select
       ts.station_id,
+      n.id as network_id,
+      n.network_code,
+      n.display_name as network_label,
       ts.last_value,
       ts.last_value_at,
       row_number() over (
@@ -686,12 +732,17 @@ as $$
         order by ts.last_value_at desc nulls last
       ) as rn
     from timeseries ts
+    join stations stn on stn.id = ts.station_id
+    join networks n
+      on n.id = stn.network_id
+     and n.public_display_enabled = true
     join phenomena phen on phen.id = ts.phenomenon_id
     left join observed_properties op on op.id = phen.observed_property_id
-    where ts.station_id is not null
-      and ts.last_value is not null
+    cross join params
+    where ts.last_value is not null
       and ts.last_value_at is not null
       and ts.last_value >= 0
+      and (params.network_code is null or n.network_code = params.network_code)
       and (
         op.code = 'pm25'
         or (
@@ -707,6 +758,9 @@ as $$
     select
       stn.pcon_code,
       stn.pcon_version,
+      pm.network_id,
+      pm.network_code,
+      pm.network_label,
       pm.last_value,
       pm.last_value_at
     from pm25_candidates pm
@@ -718,17 +772,28 @@ as $$
     select
       pcon_code,
       pcon_version,
+      network_id,
+      network_code,
+      network_label,
       count(*)::int as station_count,
       percentile_cont(0.5) within group (order by last_value) as median_value,
       avg(last_value) as mean_value,
       max(last_value_at) as latest_value_at
     from pm25_latest
-    group by pcon_code, pcon_version
+    group by
+      pcon_code,
+      pcon_version,
+      network_id,
+      network_code,
+      network_label
   )
   select
     p.pcon_code,
     coalesce(pc.name, pl.name, gc.name) as pcon_name,
     p.pcon_version,
+    p.network_id,
+    p.network_code,
+    p.network_label,
     p.station_count,
     (p.station_count = 1) as single_site,
     p.median_value,
@@ -744,25 +809,40 @@ as $$
   cross join params
   where (params.pcon_version is null or p.pcon_version = params.pcon_version)
     and (params.since_ts is null or p.latest_value_at > params.since_ts)
+  order by p.pcon_code, p.network_code
   limit (select limit_rows from params);
 $$;
 
 grant execute on function uk_aq_public.uk_aq_pcon_hex_rpc(
   text,
-  int,
-  timestamptz
-) to anon, authenticated;
-
-grant execute on function uk_aq_public.uk_aq_pcon_hex_rpc(
   text,
   int,
   timestamptz
-) to service_role;
+) to anon, authenticated, service_role;
 
 -- uk_aq_stations RPC for read-only access (Edge function backing).
 
-create or replace function uk_aq_public.uk_aq_stations_rpc(
-  connector_id integer default null,
+do $$
+declare
+  v_fn record;
+begin
+  for v_fn in
+    select pg_get_function_identity_arguments(p.oid) as identity_args
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'uk_aq_public'
+      and p.proname = 'uk_aq_stations_rpc'
+  loop
+    execute format(
+      'drop function if exists uk_aq_public.uk_aq_stations_rpc(%s)',
+      v_fn.identity_args
+    );
+  end loop;
+end
+$$;
+
+create function uk_aq_public.uk_aq_stations_rpc(
+  network_code text default null,
   region text default null,
   station_like text default null,
   limit_rows int default null,
@@ -773,7 +853,12 @@ returns table (
   station_ref text,
   label text,
   geometry jsonb,
-  network_memberships jsonb
+  network_id bigint,
+  network_code text,
+  network_label text,
+  connector_id integer,
+  connector_code text,
+  connector_label text
 )
 language sql
 security definer
@@ -781,7 +866,7 @@ set search_path = uk_aq_core, public, pg_catalog
 as $$
   with params as (
     select
-      connector_id as connector_id,
+      nullif(trim(network_code), '') as network_code,
       nullif(trim(region), '') as region,
       nullif(trim(station_like), '') as station_like,
       case
@@ -797,43 +882,32 @@ as $$
       when s.geometry is null then null
       else st_asgeojson(s.geometry)::jsonb
     end as geometry,
-    coalesce(memberships.memberships, '[]'::jsonb) as network_memberships
+    n.id as network_id,
+    n.network_code,
+    n.display_name as network_label,
+    s.connector_id,
+    c.connector_code,
+    c.display_name as connector_label
   from uk_aq_core.stations s
-  left join lateral (
-    select jsonb_agg(
-      jsonb_build_object(
-        'network_code', snm.network_code,
-        'network_label', snm.network_label,
-        'is_primary', snm.is_primary
-      )
-      order by snm.network_code
-    ) as memberships
-    from uk_aq_core.station_network_memberships snm
-    where snm.station_id = s.id
-  ) memberships on true
+  join uk_aq_core.networks n
+    on n.id = s.network_id
+   and n.public_display_enabled = true
+  left join uk_aq_core.connectors c on c.id = s.connector_id
   cross join params
   where s.geometry is not null
-    and (params.connector_id is null or s.connector_id = params.connector_id)
+    and (params.network_code is null or n.network_code = params.network_code)
     and (params.region is null or s.region ilike '%' || params.region || '%')
     and (params.station_like is null or s.label ilike '%' || params.station_like || '%')
   limit (select limit_rows from params);
 $$;
 
 grant execute on function uk_aq_public.uk_aq_stations_rpc(
-  integer,
   text,
-  text,
-  int,
-  int
-) to anon, authenticated;
-
-grant execute on function uk_aq_public.uk_aq_stations_rpc(
-  integer,
   text,
   text,
   int,
   int
-) to service_role;
+) to anon, authenticated, service_role;
 
 -- uk_aq_surbiton_latest RPC for read-only access (Edge function backing).
 

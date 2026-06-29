@@ -16,6 +16,7 @@ Monitoring sites within a connector/service_ref, with optional spatial metadata.
 - pcon_version: Optional Parliamentary Constituency boundary version used for `pcon_code`.
 - geometry: Optional Point geometry (WGS84, SRID 4326).
 - connector_id: FK to `connectors.id`.
+- network_id: Required FK to the station's canonical `networks.id`.
 - service_ref: External SOS service identifier (string).
 - category_id: Optional FK to `categories.id`.
 - first_seen_at: When the station first appeared in ingest (default now()).
@@ -26,4 +27,6 @@ Monitoring sites within a connector/service_ref, with optional spatial metadata.
 ## Notes
 - Uniqueness is enforced on (connector_id, service_ref, station_ref).
 - Geometry has a GIST index to support spatial queries.
+- Inserts/updates with a null `network_id` use the connector's
+  `default_network_id`; the write fails if that connector has no default.
 - For Sensor.Community, `station_exposure` is mapped from `location.indoor` (1 → `indoor`, 0 → `outdoor`; missing stays null).

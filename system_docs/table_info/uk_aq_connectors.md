@@ -7,6 +7,8 @@ Defines each network connector and its polling configuration.
 - connector_code: Short connector code used as filename prefix for connector outputs.
 - label: Source label from the upstream service.
 - display_name: UI-friendly connector name (curated).
+- default_network_id: FK to the canonical network assigned to new stations
+  when a station writer does not supply `network_id`.
 - station_display_name_template: Template for station display names, with tokens `{station_name}`, `{station_label}`, `{station_ref}`.
 - service_url: Base URL for the SOS API (if applicable).
 - overwrite_station_name: Whether station ingests may overwrite existing `stations.station_name` values (default true).
@@ -21,5 +23,6 @@ Defines each network connector and its polling configuration.
 
 ## Notes
 - `connector_code` is unique; internal joins use `id`.
+- Connector labels are source/debug metadata and are not public network names.
 - Known connectors can override the bbox/station filter support flags on insert.
 - Cron dispatchers in the ingest repo at `supabase/uk_aq_polling_cron.sql` skip polling when `poll_enabled` is false.

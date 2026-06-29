@@ -9,18 +9,17 @@ This document summarizes the schema defined in `schemas/uk_air_quality_schema.sq
 
 ## Core reference tables
 - External identifiers that arrive as text (even if numeric) are stored as `*_ref`; internal joins use `*_id` columns. `connectors.id`/`timeseries.id` and all `connector_id`/`timeseries_id` columns are integer; other ids can remain bigint.
-- `connectors`: network connectors with integer `id` (internal) and `connector_code` for filename prefixes, plus `label` (source label) and `display_name` (UI), URL and polling fields (`station_display_name_template`, `overwrite_station_name`, `poll_enabled`, `poll_interval_minutes`, `poll_window_hours`, `poll_timeseries_batch_size`, `stations_bbox_supported`, `timeseries_station_filter_supported`, `last_polled_at`).
+- `networks`: canonical public/internal network catalog. `network_type` is required and constrained to `official`, `community`, or `aggregator`; `public_display_enabled` controls public API/website visibility.
+- `connectors`: source connectors with integer `id` (internal), `connector_code` for filename prefixes, source/debug labels, polling fields, and `default_network_id` for assigning a canonical network to new stations.
 - `categories`: high-level grouping, per connector.
 - `observed_properties`: canonical observed-property catalog shared across connectors (`code`, `display_name`, `domain` = `aq|met`, optional `canonical_uom`).
 - `phenomena`: slim connector/source bridge for what is measured; stores per-connector/source labels (`source_label`, `label`, optional `notation`/`pollutant_label`) and links to canonical `observed_properties` via `observed_property_id`.
 - `offerings`: logical groupings, per connector + `service_ref`.
 - `features`: features of interest with geometry (Point, 4326), per connector + `service_ref`.
 - `procedures`: sensors/methods; optional raw_formats list, per connector + `service_ref`.
-- `stations`: monitoring sites; bigint `id` (internal) with `station_ref` (external) and `service_ref` (remote SOS service id), integer `connector_id`, unique `(connector_id, service_ref, station_ref)`, plus lifecycle fields `first_seen_at`, `last_seen_at`, `removed_at`. Includes `station_name` as a cleaned display name, `station_type` as the service-provided classification, `station_exposure` for indoor/outdoor, and stores `la_code`/`la_version` and `pcon_code`/`pcon_version` for geography lookups.
+- `stations`: monitoring sites; bigint `id` (internal) with one required `connector_id` and one required canonical `network_id`. New rows inherit `connectors.default_network_id` when `network_id` is omitted. Includes lifecycle, display, type/exposure, and geography fields.
 - `station_metadata`: per-station JSON attributes for network-specific fields not stored on `stations` (ownership, device, status, siting metadata).
-- `station_network_memberships`: multi-network membership metadata for stations, including a `network_code` (aligned to `uk_aq_networks.network_code`) and `is_primary` flag for preferred ingest source.
-- `uk_aq_networks`: curated network catalog with `network_code`, `display_name`, and `connector_code` (use `uk_air_sos` for SOS-derived networks).
-- Seed networks live in `seeds/uk_aq_networks_seed.sql`.
+- The legacy multi-network membership/catalog tables are deprecated and scheduled for removal in the website/API v2.0.0 hard cut. Public reads use `stations.network_id -> networks.id`.
 - `uk_air_sos_networks`: lookup table for network labels from the UK-AIR monitoring sites register (exact `network_ref`, optional `network_code`, and display name).
 - `uk_air_sos_network_pollutants`: pollutant matching rules used to filter SOS network memberships by pollutant coverage.
 - `uk_air_sos_site_register`: snapshot of the UK-AIR monitoring sites CSV, including UK-AIR IDs, coordinates, networks array, and raw payload for audit.
@@ -35,6 +34,13 @@ This document summarizes the schema defined in `schemas/uk_air_quality_schema.sq
 ## Station geography
 - `stations.la_code`/`la_version` and `stations.pcon_code`/`pcon_version` are populated externally (no boundary lookup tables in Supabase).
 - `uk_aq_fix_station_geometry_swapped()`: fixes stations with swapped lat/lon coordinates.
+
+## Public website RPCs
+- `uk_aq_latest_rpc` and `uk_aq_stations_rpc` accept `network_code`, not a connector filter, and return scalar `network_id`, `network_code`, and `network_label` fields.
+- Latest and station rows retain scalar connector identity and labels for provenance/debug use. They do not return membership arrays.
+- `uk_aq_pcon_hex_rpc` and `uk_aq_la_hex_rpc` accept `network_code` and aggregate each geography/network pair separately so every row has a truthful scalar network identity.
+- All four RPCs join `stations.network_id -> networks.id` and exclude networks where `public_display_enabled` is false, including unfiltered requests.
+- `network_type` is intentionally limited to the public networks catalog and is not repeated by station/latest/geography RPC rows.
 
 ## Timeseries and metadata
 - `timeseries`: SOS timeseries metadata; integer `id` (internal) with `timeseries_ref` (external), `service_ref`, integer `connector_id`, and `station_id` bigint FK.
@@ -105,7 +111,7 @@ This document summarizes the schema defined in `schemas/uk_air_quality_schema.sq
   - `uk_aq_rpc_aqi_compute_runs_cleanup`
 
 ## RLS (Row Level Security)
-- RLS enabled on all domain tables (not on system tables like spatial_ref_sys), including `station_metadata` and `station_network_memberships`.
+- RLS is enabled on domain tables (not on system tables like `spatial_ref_sys`).
 - Policies (idempotent via DO block):
   - `select`: allowed for roles `authenticated` and `service_role`.
   - `all` (insert/update/delete): allowed for `service_role` only.

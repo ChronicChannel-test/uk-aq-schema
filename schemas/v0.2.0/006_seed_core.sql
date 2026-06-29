@@ -6,20 +6,22 @@ set search_path = uk_aq_core, public, pg_catalog;
 insert into networks (
   network_code,
   display_name,
+  network_type,
   ingest_enabled,
   public_display_enabled,
   default_priority,
   metadata
 )
 values
-  ('gov_uk_aurn', 'GOV.UK AURN', true, true, 10, '{}'::jsonb),
-  ('breathelondon', 'Breathe London', true, true, 20, '{}'::jsonb),
-  ('openaq', 'OpenAQ', true, false, 100, '{}'::jsonb),
-  ('sensorcommunity', 'Sensor.Community', true, false, 100, '{}'::jsonb),
-  ('laqn', 'LAQN', true, false, 50, '{}'::jsonb)
+  ('gov_uk_aurn', 'GOV.UK AURN', 'official', true, true, 10, '{}'::jsonb),
+  ('breathelondon', 'Breathe London', 'community', true, true, 20, '{}'::jsonb),
+  ('openaq', 'OpenAQ', 'aggregator', true, false, 100, '{}'::jsonb),
+  ('sensorcommunity', 'Sensor.Community', 'community', true, false, 100, '{}'::jsonb),
+  ('laqn', 'LAQN', 'official', true, false, 50, '{}'::jsonb)
 on conflict (network_code) do update
 set
   display_name = excluded.display_name,
+  network_type = excluded.network_type,
   ingest_enabled = excluded.ingest_enabled,
   public_display_enabled = excluded.public_display_enabled,
   default_priority = excluded.default_priority,
