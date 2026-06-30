@@ -14,7 +14,6 @@ uk-aq-schema/
     purpleair_schema.sql
     drop_uk_air_quality_tables.sql
   seeds/
-    uk_aq_networks_seed.sql
     uk_aq_phenomena_pollutants.sql
   dbml/
     uk_aq_schema.dbml
@@ -45,7 +44,6 @@ psql "$SUPABASE_DB_URL" <<'SQL'
 \i '"$SCHEMA_DIR/schemas/uk_air_quality_schema.sql"'
 \i '"$SCHEMA_DIR/schemas/uk_air_quality_views.sql"'
 \i '"$SCHEMA_DIR/schemas/purpleair_schema.sql"'
-\i '"$SCHEMA_DIR/seeds/uk_aq_networks_seed.sql"'
 \i '"$SCHEMA_DIR/seeds/uk_aq_phenomena_pollutants.sql"'
 SQL
 ```

@@ -34,9 +34,7 @@ order by t.table_name, t.column_name;
 with target_tables(table_schema, table_name) as (
   values
     ('uk_aq_core', 'station_metadata'),
-    ('uk_aq_core', 'phenomena'),
-    ('uk_aq_core', 'station_network_memberships'),
-    ('uk_aq_core', 'uk_aq_networks')
+    ('uk_aq_core', 'phenomena')
 )
 select
   'target_table_inventory' as report_section,
@@ -97,9 +95,7 @@ with target_relations as (
   where n.nspname = 'uk_aq_core'
     and c.relname in (
       'station_metadata',
-      'phenomena',
-      'station_network_memberships',
-      'uk_aq_networks'
+      'phenomena'
     )
 )
 select
@@ -128,7 +124,7 @@ select
 from pg_views v
 where v.schemaname not in ('pg_catalog', 'information_schema')
   and v.definition ~* (
-    'station_metadata|station_network_memberships|uk_aq_networks|'
+    'station_metadata|'
     'phenomena|phenomenon_id|offering_id|feature_id|procedure_id|category_id|'
     'observations[^;]*connector_id'
   )
@@ -142,7 +138,7 @@ select
 from pg_matviews m
 where m.schemaname not in ('pg_catalog', 'information_schema')
   and m.definition ~* (
-    'station_metadata|station_network_memberships|uk_aq_networks|'
+    'station_metadata|'
     'phenomena|phenomenon_id|offering_id|feature_id|procedure_id|category_id|'
     'observations[^;]*connector_id'
   )
@@ -173,7 +169,7 @@ join pg_namespace n on n.oid = f.pronamespace
 join pg_language l on l.oid = f.prolang
 where n.nspname not in ('pg_catalog', 'information_schema')
   and f.function_definition ~* (
-    'station_metadata|station_network_memberships|uk_aq_networks|'
+    'station_metadata|'
     'phenomena|phenomenon_id|offering_id|feature_id|procedure_id|category_id|'
     'connector_id[^[:alnum:]_]+timeseries_id[^[:alnum:]_]+observed_at'
   )

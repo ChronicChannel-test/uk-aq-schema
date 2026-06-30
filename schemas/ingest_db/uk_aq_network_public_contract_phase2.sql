@@ -41,7 +41,6 @@ begin
       and (
         pg_get_function_identity_arguments(p.oid) not like '%network_code text%'
         or pg_get_function_identity_arguments(p.oid) like '%connector_id%'
-        or pg_get_functiondef(p.oid) like '%station_network_memberships%'
         or pg_get_functiondef(p.oid) not like '%public_display_enabled = true%'
         or pg_get_function_result(p.oid) like '%network_type%'
       )

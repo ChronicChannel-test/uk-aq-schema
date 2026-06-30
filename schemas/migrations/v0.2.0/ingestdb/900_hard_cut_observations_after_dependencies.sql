@@ -19,7 +19,7 @@
 --
 -- Safety: the old observations table is renamed to observations_legacy_v020.
 -- It is not dropped. This file does not remove timeseries legacy columns,
--- station_metadata, phenomena, station_network_memberships or uk_aq_networks.
+-- station_metadata or phenomena.
 
 begin;
 

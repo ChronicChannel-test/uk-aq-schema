@@ -89,18 +89,6 @@ Table station_metadata {
   updated_at timestamptz
 }
 
-Table station_network_memberships {
-  station_id bigint
-  network_code text
-  network_label text
-  is_primary boolean
-  created_at timestamptz
-
-  indexes {
-    (station_id, network_code) [pk]
-  }
-}
-
 Table uk_air_sos_networks {
   network_ref text [pk]
   network_code text
@@ -308,7 +296,6 @@ Ref: procedures.connector_id > connectors.id
 Ref: stations.connector_id > connectors.id
 Ref: stations.category_id > categories.id
 Ref: station_metadata.station_id > stations.id
-Ref: station_network_memberships.station_id > stations.id
 Ref: uk_air_sos_network_pollutants.network_ref > uk_air_sos_networks.network_ref
 Ref: uk_air_sos_station_refs.station_id > stations.id
 Ref: breathelondon_timeseries_checkpoints.station_id > stations.id

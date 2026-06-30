@@ -186,21 +186,8 @@ Table uk_air_sos_station_refs [note: 'Maps SOS station_id to uk_air_id (via UK-A
   }
 }
 
-Table station_network_memberships [note: 'Per-station memberships. One row per network_code; is_primary marks the preferred network.'] {
-  station_id bigint
-  network_code text
-  network_label text
-  is_primary boolean
-  created_at timestamptz
-
-  indexes {
-    (station_id, network_code) [pk]
-  }
-}
-
 Ref: phenomena.connector_id > connectors.id
 Ref: stations.connector_id > connectors.id
-Ref: station_network_memberships.station_id > stations.id
 Ref: uk_air_sos_network_pollutants.network_ref > uk_air_sos_networks.network_ref
 Ref: uk_air_sos_station_refs.station_id > stations.id
 Ref: timeseries.station_id > stations.id

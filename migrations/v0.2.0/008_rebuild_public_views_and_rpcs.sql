@@ -11,5 +11,5 @@
 -- - R2 latest snapshot and history builders
 --
 -- Do not drop legacy station_metadata, phenomena,
--- station_network_memberships, uk_aq_networks, connector_id on observations,
+-- legacy network relations, connector_id on observations,
 -- or any dependent view/function in this phase.

@@ -113,10 +113,6 @@ create or replace view station_metadata as
 select station_id, attributes, created_at, updated_at
 from uk_aq_core.station_metadata;
 
-create or replace view station_network_memberships as
-select station_id, network_code, network_label, is_primary, created_at
-from uk_aq_core.station_network_memberships;
-
 create or replace view uk_air_sos_networks as
 select network_ref, network_code, network_display_name, created_at, updated_at
 from uk_aq_core.uk_air_sos_networks;
@@ -318,7 +314,6 @@ alter view if exists features set (security_invoker = true);
 alter view if exists procedures set (security_invoker = true);
 alter view if exists stations set (security_invoker = true);
 alter view if exists station_metadata set (security_invoker = true);
-alter view if exists station_network_memberships set (security_invoker = true);
 alter view if exists uk_air_sos_networks set (security_invoker = true);
 alter view if exists uk_air_sos_network_pollutants set (security_invoker = true);
 alter view if exists uk_aq_guidelines set (security_invoker = true);
