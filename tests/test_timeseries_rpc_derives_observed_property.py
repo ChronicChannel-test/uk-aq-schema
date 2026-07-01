@@ -17,8 +17,9 @@ def test_timeseries_upsert_derives_observed_property() -> None:
     # Check that it derives the property id from phenomena when using the dynamic path
     assert "left join uk_aq_core.phenomena p on p.id = r.phenomenon_id" in source.lower()
     
-    # Ensure coalesce is used to prefer provided observed_property_id if given
-    assert "coalesce(r.observed_property_id, p.observed_property_id)" in source.lower()
+    # Ensure phenomenon_id is authoritative and caller-supplied values are ignored
+    assert "p.observed_property_id" in source.lower()
+    assert "coalesce(r.observed_property_id, p.observed_property_id)" not in source.lower()
     
     # Make sure we check has_op_id before executing the dynamic SQL
     assert "if has_op_id then" in source.lower()
