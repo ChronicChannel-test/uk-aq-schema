@@ -1932,351 +1932,160 @@ begin
 end;
 $$;
 
-create or replace function uk_aq_public.uk_aq_rpc_phenomena_upsert(
-  rows jsonb,
-  p_allow_mapping_upsert boolean default false
-)
-returns table (
-  connector_id integer,
-  source_label text,
-  phenomenon_id bigint,
-  observed_property_id bigint,
-  observed_property_code text,
-  mapping_kind text,
-  is_aqi_eligible boolean,
-  mapping_status text,
-  mapping_warning text
-)
+create or replace function uk_aq_public.uk_aq_rpc_phenomena_upsert(rows jsonb)
+returns table (phenomena_upserted int)
 language plpgsql
 security definer
 set search_path = uk_aq_core, uk_aq_raw, public, pg_catalog
 as $$
-#variable_conflict use_column
 declare
-  v_item jsonb;
-  v_connector_id integer;
-  v_source_label text;
-  v_label text;
-  v_notation text;
-  v_pollutant_label text;
-  v_source_uom text;
-  v_mapping_kind text;
-  v_observed_property_code text;
-  v_is_aqi_eligible boolean;
-  v_confidence text;
-  v_observed_property_id bigint;
-  v_phenomenon_id bigint;
-  v_mapping record;
-  v_mapping_exists boolean;
-  v_mapping_status text;
-  v_mapping_warning text;
-  v_seen_keys text[] := array[]::text[];
-  v_key text;
+  count_rows int := 0;
 begin
   if rows is null or jsonb_typeof(rows) <> 'array' or jsonb_array_length(rows) = 0 then
+    return query select 0;
     return;
   end if;
 
-  for v_item in select value from jsonb_array_elements(rows)
-  loop
-    if jsonb_typeof(v_item) <> 'object' then
-      raise exception 'phenomena rows must contain only JSON objects';
-    end if;
+  with parsed as (
+    select
+      nullif(item->>'connector_id', '')::integer as connector_id,
+      nullif(trim(coalesce(item->>'source_label', item->>'eionet_uri')), '') as source_label,
+      nullif(trim(item->>'label'), '') as label,
+      nullif(trim(item->>'notation'), '') as notation,
+      nullif(trim(item->>'pollutant_label'), '') as pollutant_label,
+      nullif(trim(item->>'observed_property_code'), '') as observed_property_code,
+      nullif(trim(item->>'observed_property_display_name'), '') as observed_property_display_name,
+      nullif(trim(item->>'observed_property_domain'), '') as observed_property_domain,
+      nullif(trim(coalesce(item->>'canonical_uom', item->>'observed_property_canonical_uom')), '') as canonical_uom
+    from jsonb_array_elements(rows) item
+  ),
+  normalized as (
+    select
+      p.connector_id,
+      p.source_label,
+      coalesce(
+        p.label,
+        p.notation,
+        p.pollutant_label,
+        p.source_label,
+        'unknown'
+      ) as label,
+      p.notation,
+      p.pollutant_label,
+      coalesce(
+        nullif(lower(regexp_replace(p.observed_property_code, '[^a-z0-9]+', '', 'g')), ''),
+        uk_aq_core.uk_aq_observed_property_code(
+          p.source_label,
+          p.notation,
+          p.pollutant_label,
+          p.label
+        )
+      ) as observed_property_code,
+      p.observed_property_display_name,
+      p.observed_property_domain,
+      p.canonical_uom
+    from parsed p
+    where p.connector_id is not null
+  )
+  insert into uk_aq_core.observed_properties (
+    code,
+    display_name,
+    domain,
+    canonical_uom
+  )
+  select
+    per_code.code,
+    per_code.display_name,
+    per_code.domain,
+    per_code.canonical_uom
+  from (
+    select
+      n.observed_property_code as code,
+      coalesce(
+        max(n.observed_property_display_name),
+        max(n.notation),
+        max(n.pollutant_label),
+        max(n.label),
+        initcap(replace(n.observed_property_code, '_', ' '))
+      ) as display_name,
+      coalesce(
+        max(n.observed_property_domain),
+        uk_aq_core.uk_aq_observed_property_domain(n.observed_property_code)
+      ) as domain,
+      coalesce(
+        max(n.canonical_uom),
+        uk_aq_core.uk_aq_observed_property_default_uom(n.observed_property_code)
+      ) as canonical_uom
+    from normalized n
+    where n.observed_property_code is not null
+    group by n.observed_property_code
+  ) per_code
+  on conflict (code) do update
+  set
+    domain = excluded.domain,
+    canonical_uom = coalesce(uk_aq_core.observed_properties.canonical_uom, excluded.canonical_uom),
+    updated_at = now();
 
-    v_connector_id := nullif(v_item->>'connector_id', '')::integer;
-    v_source_label := nullif(trim(coalesce(v_item->>'source_label', v_item->>'eionet_uri')), '');
-    v_label := nullif(trim(v_item->>'label'), '');
-    v_notation := nullif(trim(v_item->>'notation'), '');
-    v_pollutant_label := nullif(trim(v_item->>'pollutant_label'), '');
-    v_source_uom := nullif(trim(coalesce(v_item->>'source_uom', v_item->>'uom')), '');
-    v_mapping_kind := nullif(trim(v_item->>'mapping_kind'), '');
-    v_observed_property_code := nullif(
-      lower(regexp_replace(coalesce(v_item->>'observed_property_code', ''), '[^a-z0-9]+', '', 'g')),
-      ''
-    );
-    v_is_aqi_eligible := case
-      when v_item ? 'is_aqi_eligible' and jsonb_typeof(v_item->'is_aqi_eligible') <> 'null'
-        then (v_item->>'is_aqi_eligible')::boolean
-      else null
-    end;
-    v_confidence := coalesce(nullif(trim(v_item->>'confidence'), ''), 'explicit');
-
-    if v_connector_id is null or v_source_label is null then
-      raise exception 'connector_id and source_label are required for every phenomenon';
-    end if;
-
-    v_key := v_connector_id::text || ':' || v_source_label;
-    if v_key = any(v_seen_keys) then
-      raise exception 'duplicate phenomenon mapping key in request: %', v_key;
-    end if;
-    v_seen_keys := array_append(v_seen_keys, v_key);
-
-    select m.*
-    into v_mapping
-    from uk_aq_core.observed_property_mappings m
-    where m.connector_id = v_connector_id
-      and m.source_label = v_source_label;
-    v_mapping_exists := found;
-
-    if p_allow_mapping_upsert then
-      if v_mapping_kind is null then
-        raise exception 'mapping_kind is required when p_allow_mapping_upsert=true for %', v_key;
-      end if;
-
-      if v_mapping_kind not in (
-        'raw_observed_property',
-        'derived_index',
-        'derived_statistic',
-        'meteorological',
-        'unknown',
-        'ignored'
-      ) then
-        raise exception 'unsupported mapping_kind % for %', v_mapping_kind, v_key;
-      end if;
-
-      if v_mapping_kind in ('raw_observed_property', 'meteorological') then
-        if v_observed_property_code is null then
-          raise exception 'observed_property_code is required for mapped kind % (%)', v_mapping_kind, v_key;
-        end if;
-        select op.id
-        into v_observed_property_id
-        from uk_aq_core.observed_properties op
-        where op.code = v_observed_property_code;
-        if not found then
-          raise exception 'unknown canonical observed_property_code % for %', v_observed_property_code, v_key;
-        end if;
-      else
-        if v_observed_property_code is not null then
-          raise exception 'mapping_kind % must not provide observed_property_code (%)', v_mapping_kind, v_key;
-        end if;
-        v_observed_property_id := null;
-      end if;
-
-      v_is_aqi_eligible := coalesce(v_is_aqi_eligible, false);
-      if v_is_aqi_eligible and (
-        v_mapping_kind <> 'raw_observed_property'
-        or v_observed_property_code not in ('pm25', 'pm10', 'no2')
-      ) then
-        raise exception 'AQI eligibility requires raw pm25, pm10, or no2 mapping (%)', v_key;
-      end if;
-      if v_mapping_kind = 'raw_observed_property'
-         and lower(coalesce(v_source_uom, '')) in ('daqi', 'index') then
-        raise exception 'raw observed-property mapping cannot use source_uom % (%)', v_source_uom, v_key;
-      end if;
-      if v_mapping_kind = 'raw_observed_property'
-         and lower(coalesce(v_pollutant_label, '')) like 'daqi[_]%' then
-        raise exception 'raw observed-property mapping cannot use pollutant_label % (%)', v_pollutant_label, v_key;
-      end if;
-
-      v_mapping_status := case
-        when not v_mapping_exists then 'created'
-        when (
-          v_mapping.notation,
-          v_mapping.pollutant_label,
-          v_mapping.source_uom,
-          v_mapping.mapping_kind,
-          v_mapping.observed_property_code,
-          v_mapping.is_aqi_eligible,
-          v_mapping.is_active,
-          v_mapping.confidence,
-          v_mapping.notes
-        ) is distinct from (
-          v_notation,
-          v_pollutant_label,
-          v_source_uom,
-          v_mapping_kind,
-          v_observed_property_code,
-          v_is_aqi_eligible,
-          true,
-          v_confidence,
-          coalesce(nullif(trim(v_item->>'mapping_notes'), ''), v_mapping.notes)
-        ) then 'updated'
-        else 'existing'
-      end;
-
-      insert into uk_aq_core.observed_property_mappings (
-        connector_id,
-        source_label,
-        notation,
-        pollutant_label,
-        source_uom,
-        observed_property_id,
-        observed_property_code,
-        mapping_kind,
-        is_aqi_eligible,
-        is_active,
-        confidence,
-        notes
-      )
-      values (
-        v_connector_id,
-        v_source_label,
-        v_notation,
-        v_pollutant_label,
-        v_source_uom,
-        v_observed_property_id,
-        v_observed_property_code,
-        v_mapping_kind,
-        v_is_aqi_eligible,
-        true,
-        v_confidence,
-        nullif(trim(v_item->>'mapping_notes'), '')
-      )
-      on conflict (connector_id, source_label) do update
-      set
-        notation = excluded.notation,
-        pollutant_label = excluded.pollutant_label,
-        source_uom = excluded.source_uom,
-        observed_property_id = excluded.observed_property_id,
-        observed_property_code = excluded.observed_property_code,
-        mapping_kind = excluded.mapping_kind,
-        is_aqi_eligible = excluded.is_aqi_eligible,
-        is_active = true,
-        confidence = excluded.confidence,
-        notes = coalesce(excluded.notes, uk_aq_core.observed_property_mappings.notes)
-      where (
-        uk_aq_core.observed_property_mappings.notation,
-        uk_aq_core.observed_property_mappings.pollutant_label,
-        uk_aq_core.observed_property_mappings.source_uom,
-        uk_aq_core.observed_property_mappings.observed_property_id,
-        uk_aq_core.observed_property_mappings.observed_property_code,
-        uk_aq_core.observed_property_mappings.mapping_kind,
-        uk_aq_core.observed_property_mappings.is_aqi_eligible,
-        uk_aq_core.observed_property_mappings.is_active,
-        uk_aq_core.observed_property_mappings.confidence,
-        uk_aq_core.observed_property_mappings.notes
-      ) is distinct from (
-        excluded.notation,
-        excluded.pollutant_label,
-        excluded.source_uom,
-        excluded.observed_property_id,
-        excluded.observed_property_code,
-        excluded.mapping_kind,
-        excluded.is_aqi_eligible,
-        true,
-        excluded.confidence,
-        coalesce(excluded.notes, uk_aq_core.observed_property_mappings.notes)
-      );
-    elsif v_mapping_exists then
-      if v_item ? 'mapping_kind'
-         and v_mapping_kind is distinct from v_mapping.mapping_kind then
-        raise exception 'mapping_kind conflicts with authoritative mapping for %', v_key;
-      end if;
-      if v_item ? 'observed_property_code'
-         and v_observed_property_code is distinct from v_mapping.observed_property_code then
-        raise exception 'observed_property_code conflicts with authoritative mapping for %', v_key;
-      end if;
-      if v_item ? 'is_aqi_eligible'
-         and v_is_aqi_eligible is distinct from v_mapping.is_aqi_eligible then
-        raise exception 'is_aqi_eligible conflicts with authoritative mapping for %', v_key;
-      end if;
-      v_mapping_status := 'existing';
-    else
-      if v_item ? 'mapping_kind'
-         or v_item ? 'observed_property_code'
-         or v_item ? 'is_aqi_eligible' then
-        raise exception 'new explicit mapping requires p_allow_mapping_upsert=true for %', v_key;
-      end if;
-
-      insert into uk_aq_core.observed_property_mappings (
-        connector_id,
-        source_label,
-        notation,
-        pollutant_label,
-        source_uom,
-        mapping_kind,
-        is_aqi_eligible,
-        confidence,
-        notes
-      )
-      values (
-        v_connector_id,
-        v_source_label,
-        v_notation,
-        v_pollutant_label,
-        v_source_uom,
-        'unknown',
-        false,
-        'inferred',
-        'Created by central phenomena RPC without an explicit mapping.'
-      );
-      v_mapping_status := 'created_unknown';
-      v_mapping_warning := 'unknown_source_label';
-    end if;
-
-    select m.*
-    into strict v_mapping
-    from uk_aq_core.observed_property_mappings m
-    where m.connector_id = v_connector_id
-      and m.source_label = v_source_label;
-
-    insert into uk_aq_core.phenomena (
-      connector_id,
-      source_label,
-      label,
-      notation,
-      pollutant_label,
-      observed_property_id
-    )
-    values (
-      v_connector_id,
-      v_source_label,
-      coalesce(v_label, v_notation, v_pollutant_label, v_source_label),
-      v_notation,
-      v_pollutant_label,
-      case when v_mapping.is_active then v_mapping.observed_property_id else null end
-    )
-    on conflict (connector_id, source_label) do update
-    set
-      label = excluded.label,
-      notation = excluded.notation,
-      pollutant_label = excluded.pollutant_label,
-      observed_property_id = excluded.observed_property_id
-    returning id into v_phenomenon_id;
-
-    if exists (
-      select 1
-      from information_schema.columns
-      where table_schema = 'uk_aq_core'
-        and table_name = 'timeseries'
-        and column_name = 'phenomenon_id'
-    ) and exists (
-      select 1
-      from information_schema.columns
-      where table_schema = 'uk_aq_core'
-        and table_name = 'timeseries'
-        and column_name = 'observed_property_id'
-    ) then
-      execute
-        'update uk_aq_core.timeseries
-         set observed_property_id = $1
-         where connector_id = $2
-           and phenomenon_id = $3
-           and observed_property_id is distinct from $1'
-      using
-        case when v_mapping.is_active then v_mapping.observed_property_id else null end,
-        v_connector_id,
-        v_phenomenon_id;
-    end if;
-
-    connector_id := v_connector_id;
-    source_label := v_source_label;
-    phenomenon_id := v_phenomenon_id;
-    observed_property_id := case
-      when v_mapping.is_active then v_mapping.observed_property_id
-      else null
-    end;
-    observed_property_code := case
-      when v_mapping.is_active then v_mapping.observed_property_code
-      else null
-    end;
-    mapping_kind := v_mapping.mapping_kind;
-    is_aqi_eligible := v_mapping.is_active and v_mapping.is_aqi_eligible;
-    mapping_status := v_mapping_status;
-    mapping_warning := v_mapping_warning;
-    return next;
-    v_mapping_warning := null;
-  end loop;
+  with parsed as (
+    select
+      nullif(item->>'connector_id', '')::integer as connector_id,
+      nullif(trim(coalesce(item->>'source_label', item->>'eionet_uri')), '') as source_label,
+      nullif(trim(item->>'label'), '') as label,
+      nullif(trim(item->>'notation'), '') as notation,
+      nullif(trim(item->>'pollutant_label'), '') as pollutant_label,
+      nullif(trim(item->>'observed_property_code'), '') as observed_property_code
+    from jsonb_array_elements(rows) item
+  ),
+  normalized as (
+    select
+      p.connector_id,
+      p.source_label,
+      coalesce(
+        p.label,
+        p.notation,
+        p.pollutant_label,
+        p.source_label,
+        'unknown'
+      ) as label,
+      p.notation,
+      p.pollutant_label,
+      coalesce(
+        nullif(lower(regexp_replace(p.observed_property_code, '[^a-z0-9]+', '', 'g')), ''),
+        uk_aq_core.uk_aq_observed_property_code(
+          p.source_label,
+          p.notation,
+          p.pollutant_label,
+          p.label
+        )
+      ) as observed_property_code
+    from parsed p
+    where p.connector_id is not null
+  )
+  insert into uk_aq_core.phenomena (
+    connector_id,
+    source_label,
+    label,
+    notation,
+    pollutant_label,
+    observed_property_id
+  )
+  select
+    n.connector_id,
+    n.source_label,
+    n.label,
+    n.notation,
+    n.pollutant_label,
+    op.id as observed_property_id
+  from normalized n
+  left join uk_aq_core.observed_properties op
+    on op.code = n.observed_property_code
+  on conflict (connector_id, source_label) do update set
+    label = excluded.label,
+    notation = excluded.notation,
+    pollutant_label = excluded.pollutant_label,
+    observed_property_id = coalesce(excluded.observed_property_id, uk_aq_core.phenomena.observed_property_id);
+  get diagnostics count_rows = row_count;
+  return query select count_rows;
 end;
 $$;
 
@@ -2589,8 +2398,8 @@ grant execute on function uk_aq_public.uk_aq_rpc_stations_upsert(jsonb) to servi
 revoke all on function uk_aq_public.uk_aq_rpc_station_metadata_upsert(jsonb) from public;
 grant execute on function uk_aq_public.uk_aq_rpc_station_metadata_upsert(jsonb) to service_role;
 
-revoke all on function uk_aq_public.uk_aq_rpc_phenomena_upsert(jsonb, boolean) from public;
-grant execute on function uk_aq_public.uk_aq_rpc_phenomena_upsert(jsonb, boolean) to service_role;
+revoke all on function uk_aq_public.uk_aq_rpc_phenomena_upsert(jsonb) from public;
+grant execute on function uk_aq_public.uk_aq_rpc_phenomena_upsert(jsonb) to service_role;
 
 revoke all on function uk_aq_public.uk_aq_rpc_phenomena_ids(integer, text[]) from public;
 grant execute on function uk_aq_public.uk_aq_rpc_phenomena_ids(integer, text[]) to service_role;

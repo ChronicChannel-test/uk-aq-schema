@@ -13,7 +13,6 @@ This document summarizes the schema defined in `schemas/uk_air_quality_schema.sq
 - `connectors`: source connectors with integer `id` (internal), `connector_code` for filename prefixes, source/debug labels, polling fields, and `default_network_id` for assigning a canonical network to new stations.
 - `categories`: high-level grouping, per connector.
 - `observed_properties`: canonical observed-property catalog shared across connectors (`code`, `display_name`, `domain` = `aq|met`, optional `canonical_uom`).
-- `observed_property_mappings`: connector/source mapping policy that classifies raw, meteorological, derived/index, unknown, and ignored phenomena. Mappable rows carry a consistent canonical observed-property ID/code pair; only raw `pm25`, `pm10`, and `no2` mappings may be AQI eligible.
 - `phenomena`: slim connector/source bridge for what is measured; stores per-connector/source labels (`source_label`, `label`, optional `notation`/`pollutant_label`) and links to canonical `observed_properties` via `observed_property_id`.
 - `offerings`: logical groupings, per connector + `service_ref`.
 - `features`: features of interest with geometry (Point, 4326), per connector + `service_ref`.
@@ -46,7 +45,6 @@ This document summarizes the schema defined in `schemas/uk_air_quality_schema.sq
 ## Timeseries and metadata
 - `timeseries`: SOS timeseries metadata; integer `id` (internal) with `timeseries_ref` (external), `service_ref`, integer `connector_id`, and `station_id` bigint FK.
 - `reference_values`: optional reference lines attached to a timeseries (name, color, value).
-- `uk_aq_public.uk_aq_rpc_phenomena_upsert`: service-role metadata writer that applies connector/source policy from `observed_property_mappings`, returns mapping diagnostics, and requires explicit administrative mode to create or change mapping policy.
 
 ## Observations
 - `observations`: raw time-value pairs for each timeseries (observed_at timestamptz, value, status flag). Partitioned by integer `connector_id` with primary key `(connector_id, timeseries_id, observed_at)` where both ids are integer.

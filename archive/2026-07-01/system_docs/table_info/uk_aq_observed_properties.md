@@ -12,7 +12,6 @@ Canonical observed-property catalog shared across connectors.
 - updated_at: Row update timestamp.
 
 ## Notes
-- Connector-specific mapping policy is stored in `observed_property_mappings`.
-- Resolved source links used by current runtime queries stay in `phenomena`.
+- Connector-specific source mappings stay in `phenomena`.
 - `phenomena.observed_property_id` links each source-specific phenomenon to a canonical property.
 - API filtering and pollutant classification should prefer `observed_properties.code` where available.

@@ -12,7 +12,6 @@ begin
     'station_initial_metadata',
     'station_matches',
     'observed_properties',
-    'observed_property_mappings',
     'timeseries',
     'observations',
     'uk_aq_ingest_runs'

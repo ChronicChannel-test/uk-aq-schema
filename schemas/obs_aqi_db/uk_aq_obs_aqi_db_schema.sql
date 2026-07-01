@@ -1066,6 +1066,14 @@ select
 from uk_aq_core.stations;
 alter view if exists uk_aq_public.uk_aq_station_connector_lookup set (security_invoker = true);
 
+create or replace view uk_aq_public.stations_fk_check as
+select
+  id
+from uk_aq_core.stations;
+alter view if exists uk_aq_public.stations_fk_check set (security_invoker = true);
+comment on view uk_aq_public.stations_fk_check is
+  'Station ID-only public view used by service FK preflight checks. Exposes only mirrored station parent IDs so workers can validate station_id references without exposing uk_aq_core over PostgREST.';
+
 create extension if not exists pg_cron with schema extensions;
 
 create or replace function uk_aq_ops.uk_aq_db_size_metric_sample_local(
@@ -2398,6 +2406,9 @@ grant select on uk_aq_public.uk_aq_obs_aqidb_day_counts_current to service_role;
 
 revoke all on uk_aq_public.uk_aq_station_connector_lookup from public;
 grant select on uk_aq_public.uk_aq_station_connector_lookup to service_role;
+
+revoke all on uk_aq_public.stations_fk_check from public;
+grant select on uk_aq_public.stations_fk_check to service_role;
 
 -- Metadata RPCs for stations_daily mirror verification/sync.
 create or replace function uk_aq_public.uk_aq_rpc_info_schema_columns(
