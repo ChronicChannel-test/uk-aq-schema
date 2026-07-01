@@ -104,7 +104,9 @@ This document summarizes the schema defined in `schemas/uk_air_quality_schema.sq
   - `timeseries_aqi_daily`: per-day level distributions (`index_level_hour_counts`) by timeseries, AQI standard, and pollutant.
   - `timeseries_aqi_monthly`: monthly level distributions by timeseries, AQI standard, and pollutant.
 - Ops telemetry:
-  - `uk_aq_ops.aqi_compute_runs`: run-mode/window/change metrics for AQI sync jobs (currently `sync_hourly` and `backfill`; legacy run-mode values may remain historically).
+  - `uk_aq_ops.aqi_compute_runs`: run-mode/window/change metrics for AQI sync
+    and reconciliation jobs. `reconcile_deep_rolling` is logged independently
+    from `reconcile_deep`; legacy `fast` values remain accepted.
 - AQI runtime RPCs in `uk_aq_public` (service-role):
   - `uk_aq_rpc_aqi_breakpoints_active`
   - `uk_aq_rpc_timeseries_aqi_hourly_upsert`

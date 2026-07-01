@@ -5,7 +5,10 @@ AQI compute run telemetry table in `uk_aq_ops`.
 ## Fields
 - id: Run identifier (UUID).
 - started_at: Run timestamp.
-- run_mode: `sync_hourly` or `backfill` for current workers (legacy values `fast`, `reconcile_short`, `reconcile_deep` may exist historically).
+- run_mode: `sync_hourly`, `backfill`, `reconcile_short`,
+  `reconcile_deep`, or `reconcile_deep_rolling` for current workers. The
+  legacy value `fast` remains accepted for historical compatibility. Rolling
+  deep runs are stored separately from legacy deep runs.
 - trigger_mode: Trigger source label (`scheduler`, `manual`, etc.).
 - window_start_utc, window_end_utc: Hour window processed.
 - source_rows: Source rows returned from ingest RPC.

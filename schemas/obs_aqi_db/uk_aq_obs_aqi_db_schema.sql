@@ -2952,7 +2952,8 @@ create table if not exists uk_aq_aqilevels.aqi_breakpoints (
 create table if not exists uk_aq_ops.aqi_compute_runs (
   id uuid primary key default gen_random_uuid(),
   started_at timestamptz not null default now(),
-  run_mode text not null check (run_mode in ('sync_hourly', 'backfill', 'fast', 'reconcile_short', 'reconcile_deep')),
+  run_mode text not null constraint aqi_compute_runs_run_mode_check
+    check (run_mode in ('sync_hourly', 'backfill', 'fast', 'reconcile_short', 'reconcile_deep', 'reconcile_deep_rolling')),
   trigger_mode text not null default 'manual',
   window_start_utc timestamptz,
   window_end_utc timestamptz,
@@ -2971,6 +2972,13 @@ create table if not exists uk_aq_ops.aqi_compute_runs (
   duration_ms integer,
   created_at timestamptz not null default now()
 );
+
+alter table uk_aq_ops.aqi_compute_runs
+  drop constraint if exists aqi_compute_runs_run_mode_check;
+
+alter table uk_aq_ops.aqi_compute_runs
+  add constraint aqi_compute_runs_run_mode_check
+  check (run_mode in ('sync_hourly', 'backfill', 'fast', 'reconcile_short', 'reconcile_deep', 'reconcile_deep_rolling'));
 
 create index if not exists aqi_compute_runs_started_idx
   on uk_aq_ops.aqi_compute_runs (started_at desc);
@@ -3348,7 +3356,7 @@ begin
     raise exception 'service_role required';
   end if;
 
-  if coalesce(nullif(trim(p_run_mode), ''), '') not in ('sync_hourly', 'backfill', 'fast', 'reconcile_short', 'reconcile_deep') then
+  if coalesce(nullif(trim(p_run_mode), ''), '') not in ('sync_hourly', 'backfill', 'fast', 'reconcile_short', 'reconcile_deep', 'reconcile_deep_rolling') then
     raise exception 'invalid run_mode: %', p_run_mode;
   end if;
 
