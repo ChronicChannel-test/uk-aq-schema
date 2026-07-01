@@ -2306,43 +2306,96 @@ set search_path = uk_aq_core, uk_aq_raw, public, pg_catalog
 as $$
 declare
   count_rows int := 0;
+  has_op_id boolean;
 begin
   if rows is null or jsonb_typeof(rows) <> 'array' or jsonb_array_length(rows) = 0 then
     return query select 0;
     return;
   end if;
-  insert into uk_aq_core.timeseries (
-    timeseries_ref,
-    label,
-    uom,
-    station_id,
-    connector_id,
-    service_ref,
-    phenomenon_id
-  )
-  select
-    r.timeseries_ref,
-    r.label,
-    r.uom,
-    r.station_id,
-    r.connector_id,
-    r.service_ref,
-    r.phenomenon_id
-  from jsonb_to_recordset(rows) as r(
-    timeseries_ref text,
-    label text,
-    uom text,
-    station_id bigint,
-    connector_id integer,
-    service_ref text,
-    phenomenon_id bigint
-  )
-  on conflict (connector_id, service_ref, timeseries_ref) do update set
-    label = excluded.label,
-    uom = excluded.uom,
-    station_id = excluded.station_id,
-    phenomenon_id = excluded.phenomenon_id;
-  get diagnostics count_rows = row_count;
+
+  select exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'uk_aq_core'
+      and table_name = 'timeseries'
+      and column_name = 'observed_property_id'
+  ) into has_op_id;
+
+  if has_op_id then
+    execute $dyn$
+      insert into uk_aq_core.timeseries (
+        timeseries_ref,
+        label,
+        uom,
+        station_id,
+        connector_id,
+        service_ref,
+        phenomenon_id,
+        observed_property_id
+      )
+      select
+        r.timeseries_ref,
+        r.label,
+        r.uom,
+        r.station_id,
+        r.connector_id,
+        r.service_ref,
+        r.phenomenon_id,
+        coalesce(r.observed_property_id, p.observed_property_id)
+      from jsonb_to_recordset($1) as r(
+        timeseries_ref text,
+        label text,
+        uom text,
+        station_id bigint,
+        connector_id integer,
+        service_ref text,
+        phenomenon_id bigint,
+        observed_property_id bigint
+      )
+      left join uk_aq_core.phenomena p on p.id = r.phenomenon_id
+      on conflict (connector_id, service_ref, timeseries_ref) do update set
+        label = excluded.label,
+        uom = excluded.uom,
+        station_id = excluded.station_id,
+        phenomenon_id = excluded.phenomenon_id,
+        observed_property_id = excluded.observed_property_id;
+    $dyn$ using rows;
+    get diagnostics count_rows = row_count;
+  else
+    insert into uk_aq_core.timeseries (
+      timeseries_ref,
+      label,
+      uom,
+      station_id,
+      connector_id,
+      service_ref,
+      phenomenon_id
+    )
+    select
+      r.timeseries_ref,
+      r.label,
+      r.uom,
+      r.station_id,
+      r.connector_id,
+      r.service_ref,
+      r.phenomenon_id
+    from jsonb_to_recordset(rows) as r(
+      timeseries_ref text,
+      label text,
+      uom text,
+      station_id bigint,
+      connector_id integer,
+      service_ref text,
+      phenomenon_id bigint
+    )
+    on conflict (connector_id, service_ref, timeseries_ref) do update set
+      label = excluded.label,
+      uom = excluded.uom,
+      station_id = excluded.station_id,
+      phenomenon_id = excluded.phenomenon_id;
+    get diagnostics count_rows = row_count;
+  end if;
+
   return query select count_rows;
 end;
 $$;
