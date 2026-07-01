@@ -2323,6 +2323,8 @@ begin
 
   if has_op_id then
     execute $dyn$
+      -- phenomenon_id is authoritative for direct timeseries observed-property mapping;
+      -- caller-supplied observed_property_id is ignored to avoid metadata drift.
       insert into uk_aq_core.timeseries (
         timeseries_ref,
         label,
@@ -2341,7 +2343,7 @@ begin
         r.connector_id,
         r.service_ref,
         r.phenomenon_id,
-        coalesce(r.observed_property_id, p.observed_property_id)
+        p.observed_property_id
       from jsonb_to_recordset($1) as r(
         timeseries_ref text,
         label text,
